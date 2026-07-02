@@ -1,0 +1,104 @@
+package hetrixtools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+)
+
+// CreateBlacklistMonitor creates a HetrixTools blacklist monitor.
+func (c *Client) CreateBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
+	body, err := c.doV2Form(ctx, "/blacklist/add/", request.form())
+	if err != nil {
+		return nil, err
+	}
+	return decodeActionResponse(body)
+}
+
+// UpdateBlacklistMonitor updates a HetrixTools blacklist monitor.
+func (c *Client) UpdateBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
+	body, err := c.doV2Form(ctx, "/blacklist/edit/", request.form())
+	if err != nil {
+		return nil, err
+	}
+	return decodeActionResponse(body)
+}
+
+// UpsertBlacklistMonitor updates an existing blacklist monitor by target or creates it when absent.
+func (c *Client) UpsertBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
+	existing, err := c.GetBlacklistMonitor(ctx, request.Target)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return c.CreateBlacklistMonitor(ctx, request)
+	}
+	return c.UpdateBlacklistMonitor(ctx, request)
+}
+
+// DeleteBlacklistMonitor deletes a HetrixTools blacklist monitor by target.
+func (c *Client) DeleteBlacklistMonitor(ctx context.Context, target string) error {
+	_, err := c.doV2Form(ctx, "/blacklist/delete/", url.Values{"target": {target}})
+	return err
+}
+
+// ListBlacklistMonitors returns blacklist monitors matching query filters.
+func (c *Client) ListBlacklistMonitors(ctx context.Context, query map[string]string) (*BlacklistMonitorsResponse, error) {
+	var response BlacklistMonitorsResponse
+	if err := c.getJSON(ctx, "/blacklist-monitors", query, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
+// GetBlacklistMonitor finds a blacklist monitor by exact target.
+func (c *Client) GetBlacklistMonitor(ctx context.Context, target string) (*BlacklistMonitor, error) {
+	for page := 1; ; page++ {
+		response, err := c.ListBlacklistMonitors(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100", "exact_target": target})
+		if err != nil {
+			return nil, err
+		}
+		for _, monitor := range response.BlacklistMonitors {
+			if monitor.Target == target {
+				return &monitor, nil
+			}
+		}
+		if response.Meta.Pagination.Next == nil || page >= response.Meta.Pagination.Last {
+			return nil, nil
+		}
+	}
+}
+
+// GetBlacklistMonitorReport returns the report for a blacklist monitor identifier.
+func (c *Client) GetBlacklistMonitorReport(ctx context.Context, identifier string, query map[string]string) (any, error) {
+	body, err := c.getEndpoint(ctx, "/blacklist-monitors/"+identifier+"/report", query)
+	if err != nil {
+		return nil, err
+	}
+	return decodeUntypedJSON(body)
+}
+
+// CheckBlacklistIPv4 runs a one-off IPv4 blacklist check.
+func (c *Client) CheckBlacklistIPv4(ctx context.Context, ipAddress string) (*BlacklistCheckResult, error) {
+	return c.checkBlacklist(ctx, "ipv4", ipAddress)
+}
+
+// CheckBlacklistDomain runs a one-off domain blacklist check.
+func (c *Client) CheckBlacklistDomain(ctx context.Context, domain string) (*BlacklistCheckResult, error) {
+	return c.checkBlacklist(ctx, "domain", domain)
+}
+
+func (c *Client) checkBlacklist(ctx context.Context, kind string, target string) (*BlacklistCheckResult, error) {
+	body, err := c.doV2JSON(ctx, http.MethodGet, "/blacklist-check/"+kind+"/"+url.PathEscape(target)+"/", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result BlacklistCheckResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	result.RawJSON = append(result.RawJSON[:0], body...)
+	return &result, nil
+}

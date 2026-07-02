@@ -1,0 +1,9 @@
+.terraform/
+.terraform.lock.hcl
+terraform-provider-hetrixtools
+terraform-provider-go-hetrixtools*
+terraform-provider/terraform-provider-hetrixtools
+terraform-provider/terraform-provider-go-hetrixtools*
+go-hetrixtools
+*.tfstate
+*.tfstate.*
