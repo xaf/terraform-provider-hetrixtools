@@ -12,7 +12,7 @@ Gets a HetrixTools uptime monitor report.
 
 ```terraform
 data "hetrixtools_uptime_report" "example" {
-  monitor_id = hetrixtools_uptime_monitor.web.id
+  monitor_id = hetrixtools_uptime_monitor_http.web.id
   days       = "7"
 }
 ```

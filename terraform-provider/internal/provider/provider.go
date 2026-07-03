@@ -186,7 +186,10 @@ func takeQueryValue(query map[string]string, key string) string {
 func (p *hetrixToolsProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		newBlacklistMonitorResource,
-		newUptimeMonitorResource,
+		newUptimeHTTPMonitorResource,
+		newUptimePingMonitorResource,
+		newUptimeSMTPMonitorResource,
+		newUptimeHeartbeatMonitorResource,
 		newScheduledMaintenanceResource,
 		newStatusPageMonitorsResource,
 		newServerAgentResource,

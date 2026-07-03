@@ -21,7 +21,7 @@ terraform {
   required_providers {
     hetrixtools = {
       source  = "xaf/hetrixtools"
-      version = "~> 0.1"
+      version = "~> 0.1.6"
     }
   }
 }
@@ -64,7 +64,10 @@ Environment variables:
 - `hetrixtools_server_agent`
 - `hetrixtools_server_agent_warning_policies`
 - `hetrixtools_status_page_monitors`
-- `hetrixtools_uptime_monitor`
+- `hetrixtools_uptime_monitor_heartbeat`
+- `hetrixtools_uptime_monitor_http`
+- `hetrixtools_uptime_monitor_ping`
+- `hetrixtools_uptime_monitor_smtp`
 
 ## Data Sources
 

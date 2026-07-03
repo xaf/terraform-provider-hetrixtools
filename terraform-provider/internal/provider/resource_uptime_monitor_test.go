@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -19,14 +18,14 @@ func pointerToInt64(value int64) *int64 { return &value }
 
 func pointerToString(value string) *string { return &value }
 
-func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
+func TestUptimeHTTPMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	showTarget := false
 	trueValue := true
 	diagnostics := &testDiagnostics{}
-	state := uptimeMonitorModelFromAPI(ctx, uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
+	state := uptimeHTTPMonitorModelFromAPI(ctx, uptimeHTTPMonitorModel{}, hetrixtools.UptimeMonitor{
 		ID:               "up-1",
 		Type:             "http",
 		Name:             "Homepage",
@@ -57,9 +56,6 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	if got, want := state.ID.ValueString(), "up-1"; got != want {
 		t.Fatalf("id = %q, want %q", got, want)
 	}
-	if got, want := state.Type.ValueString(), "http"; got != want {
-		t.Fatalf("type = %q, want %q", got, want)
-	}
 	if got, want := state.ContactList.ValueString(), "contacts-1"; got != want {
 		t.Fatalf("contact list = %q, want %q", got, want)
 	}
@@ -68,12 +64,6 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	}
 	if got, want := state.VerSSLCert.ValueBool(), true; got != want {
 		t.Fatalf("verify ssl certificate = %v, want %v", got, want)
-	}
-	if !state.Port.IsNull() {
-		t.Fatalf("port = %#v, want null for http monitor", state.Port)
-	}
-	if !state.ServerID.IsNull() {
-		t.Fatalf("server ID = %#v, want null for http monitor", state.ServerID)
 	}
 	if got, want := state.Keyword.ValueString(), "healthy"; got != want {
 		t.Fatalf("keyword = %q, want %q", got, want)
@@ -102,10 +92,10 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	}
 }
 
-func TestUptimeMonitorModelFromAPIPreservesSMTPPort(t *testing.T) {
+func TestUptimeSMTPMonitorModelFromAPIPreservesPort(t *testing.T) {
 	t.Parallel()
 
-	state := uptimeMonitorModelFromAPI(context.Background(), uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
+	state := uptimeSMTPMonitorModelFromAPI(context.Background(), uptimeSMTPMonitorModel{}, hetrixtools.UptimeMonitor{
 		ID:     "smtp-1",
 		Type:   "smtp",
 		Name:   "SMTP",
@@ -117,21 +107,21 @@ func TestUptimeMonitorModelFromAPIPreservesSMTPPort(t *testing.T) {
 	}
 }
 
-func TestUptimeMonitorModelFromAPIPreservesHeartbeatServerID(t *testing.T) {
+func TestUptimeHeartbeatMonitorModelFromAPIPreservesServerID(t *testing.T) {
 	t.Parallel()
 
-	state := uptimeMonitorModelFromAPI(context.Background(), uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
+	state := uptimeHeartbeatMonitorModelFromAPI(uptimeHeartbeatMonitorModel{}, hetrixtools.UptimeMonitor{
 		ID:       "heartbeat-1",
 		Type:     "heartbeat",
 		Name:     "Heartbeat",
 		ServerID: pointerToString("srv-1"),
-	}, &testDiagnostics{})
+	})
 	if got, want := state.ServerID.ValueString(), "srv-1"; got != want {
 		t.Fatalf("server ID = %q, want %q", got, want)
 	}
 }
 
-func TestUptimeMonitorRequestFromModelUsesCanonicalLocationNames(t *testing.T) {
+func TestUptimeHTTPMonitorRequestFromModelUsesCanonicalLocationNames(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -141,10 +131,11 @@ func TestUptimeMonitorRequestFromModelUsesCanonicalLocationNames(t *testing.T) {
 		t.Fatalf("build locations: %v", diags)
 	}
 
-	request := uptimeMonitorRequestFromModel(ctx, uptimeMonitorModel{
-		ID:              types.StringValue("up-1"),
-		Type:            types.StringValue("http"),
-		Name:            types.StringValue("Homepage"),
+	request := uptimeHTTPMonitorRequestFromModel(ctx, uptimeHTTPMonitorModel{
+		uptimeCommonModel: uptimeCommonModel{
+			ID:   types.StringValue("up-1"),
+			Name: types.StringValue("Homepage"),
+		},
 		Target:          types.StringValue("https://example.com"),
 		HTTPMethod:      types.StringValue("GET"),
 		MaxRedirects:    types.Int64Value(5),
@@ -166,6 +157,9 @@ func TestUptimeMonitorRequestFromModelUsesCanonicalLocationNames(t *testing.T) {
 			t.Fatalf("v2 location code %q leaked into provider request model: %#v", location, request.Locations)
 		}
 	}
+	if got, want := request.Type, "http"; got != want {
+		t.Fatalf("type = %q, want %q", got, want)
+	}
 	if got, want := request.Keyword, "healthy"; got != want {
 		t.Fatalf("keyword = %q, want %q", got, want)
 	}
@@ -175,69 +169,6 @@ func TestUptimeMonitorRequestFromModelUsesCanonicalLocationNames(t *testing.T) {
 	if got, want := request.MaxRedirects, int64(5); got != want {
 		t.Fatalf("max_redirects = %d, want %d", got, want)
 	}
-}
-
-func TestValidateUptimeMonitorModelRequiresTypeSpecificFields(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		model      uptimeMonitorModel
-		wantErrors []string
-	}{
-		{
-			name:       "http requires target",
-			model:      uptimeMonitorModel{Type: types.StringValue("http")},
-			wantErrors: []string{"target is required for http uptime monitors"},
-		},
-		{
-			name:       "ping requires target",
-			model:      uptimeMonitorModel{Type: types.StringValue("ping")},
-			wantErrors: []string{"target is required for ping uptime monitors"},
-		},
-		{
-			name:       "smtp requires target and port",
-			model:      uptimeMonitorModel{Type: types.StringValue("smtp")},
-			wantErrors: []string{"port is required for smtp uptime monitors", "target is required for smtp uptime monitors"},
-		},
-		{
-			name:       "smtp auth must be paired",
-			model:      uptimeMonitorModel{Type: types.StringValue("smtp"), Target: types.StringValue("smtp.example.com"), Port: types.Int64Value(587), SMTPUser: types.StringValue("user")},
-			wantErrors: []string{"smtp_user and smtp_password must be set together"},
-		},
-		{
-			name:       "heartbeat rejects target",
-			model:      uptimeMonitorModel{Type: types.StringValue("heartbeat"), Target: types.StringValue("https://example.com")},
-			wantErrors: []string{"target is not supported for heartbeat uptime monitors"},
-		},
-		{
-			name:       "ping rejects http fields",
-			model:      uptimeMonitorModel{Type: types.StringValue("ping"), Target: types.StringValue("example.com"), Keyword: types.StringValue("healthy")},
-			wantErrors: []string{"keyword is only supported for http uptime monitors"},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			diagnostics := &testDiagnostics{}
-			validateUptimeMonitorModel(diagnostics, test.model)
-			for _, want := range test.wantErrors {
-				if !diagnosticContains(diagnostics.errors, want) {
-					t.Fatalf("diagnostics = %#v, want containing %q", diagnostics.errors, want)
-				}
-			}
-		})
-	}
-}
-
-func diagnosticContains(errors []string, target string) bool {
-	for _, err := range errors {
-		if strings.Contains(err, target) {
-			return true
-		}
-	}
-	return false
 }
 
 func containsString(values []string, target string) bool {

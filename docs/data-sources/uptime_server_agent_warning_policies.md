@@ -12,7 +12,7 @@ Gets HetrixTools server agent warning policies for an uptime monitor.
 
 ```terraform
 data "hetrixtools_uptime_server_agent_warning_policies" "example" {
-  monitor_id = hetrixtools_uptime_monitor.server.id
+  monitor_id = hetrixtools_uptime_monitor_heartbeat.server.id
 }
 ```
 

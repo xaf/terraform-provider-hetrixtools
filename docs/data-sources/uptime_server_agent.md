@@ -12,7 +12,7 @@ Gets the HetrixTools server agent attached to an uptime monitor.
 
 ```terraform
 data "hetrixtools_uptime_server_agent" "example" {
-  monitor_id = hetrixtools_uptime_monitor.server.id
+  monitor_id = hetrixtools_uptime_monitor_heartbeat.server.id
 }
 ```
 

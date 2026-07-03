@@ -12,7 +12,7 @@ Manages server-agent warning policies for an uptime monitor. The policy payload 
 
 ```terraform
 resource "hetrixtools_server_agent_warning_policies" "example" {
-  monitor_id = hetrixtools_uptime_monitor.server.id
+  monitor_id = hetrixtools_uptime_monitor_heartbeat.server.id
 
   policies_json = jsonencode({
     cpu = {

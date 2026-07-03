@@ -18,25 +18,28 @@ import (
 
 var _ resource.Resource = (*uptimeMonitorResource)(nil)
 var _ resource.ResourceWithConfigure = (*uptimeMonitorResource)(nil)
-var _ resource.ResourceWithValidateConfig = (*uptimeMonitorResource)(nil)
 var _ resource.ResourceWithImportState = (*uptimeMonitorResource)(nil)
 
-type uptimeMonitorResource struct{ client *hetrixtools.Client }
+type uptimeMonitorType string
 
-type uptimeMonitorModel struct {
+const (
+	uptimeMonitorHTTP      uptimeMonitorType = "http"
+	uptimeMonitorPing      uptimeMonitorType = "ping"
+	uptimeMonitorSMTP      uptimeMonitorType = "smtp"
+	uptimeMonitorHeartbeat uptimeMonitorType = "heartbeat"
+)
+
+type uptimeMonitorResource struct {
+	client      *hetrixtools.Client
+	monitorType uptimeMonitorType
+}
+
+type uptimeCommonModel struct {
 	ID               types.String `tfsdk:"id"`
-	Type             types.String `tfsdk:"type"`
 	Name             types.String `tfsdk:"name"`
-	Target           types.String `tfsdk:"target"`
-	Port             types.Int64  `tfsdk:"port"`
-	HTTPMethod       types.String `tfsdk:"http_method"`
-	MaxRedirects     types.Int64  `tfsdk:"max_redirects"`
-	SMTPUser         types.String `tfsdk:"smtp_user"`
-	SMTPPass         types.String `tfsdk:"smtp_password"`
 	Timeout          types.Int64  `tfsdk:"timeout"`
 	Frequency        types.Int64  `tfsdk:"frequency"`
 	FailsBeforeAlert types.Int64  `tfsdk:"fails_before_alert"`
-	FailedLocations  types.Int64  `tfsdk:"failed_locations"`
 	ContactList      types.String `tfsdk:"contact_list_id"`
 	Category         types.String `tfsdk:"category"`
 	AlertAfter       types.String `tfsdk:"alert_after"`
@@ -44,76 +47,141 @@ type uptimeMonitorModel struct {
 	RepeatEvery      types.String `tfsdk:"repeat_every"`
 	Public           types.Bool   `tfsdk:"public"`
 	ShowTarget       types.Bool   `tfsdk:"show_target"`
-	VerSSLCert       types.Bool   `tfsdk:"verify_ssl_certificate"`
-	VerSSLHost       types.Bool   `tfsdk:"verify_ssl_host"`
-	Locations        types.Set    `tfsdk:"locations"`
-	Keyword          types.String `tfsdk:"keyword"`
-	HTTPCodes        types.List   `tfsdk:"accepted_http_codes"`
-	Grace            types.Int64  `tfsdk:"grace"`
-	InfoPublic       types.Bool   `tfsdk:"info_public"`
-	CPUPublic        types.Bool   `tfsdk:"cpu_public"`
-	RAMPublic        types.Bool   `tfsdk:"ram_public"`
-	DiskPublic       types.Bool   `tfsdk:"disk_public"`
-	NetPublic        types.Bool   `tfsdk:"net_public"`
-	ServerID         types.String `tfsdk:"server_id"`
 }
 
-func newUptimeMonitorResource() resource.Resource { return &uptimeMonitorResource{} }
+type uptimeHTTPMonitorModel struct {
+	uptimeCommonModel
+	Target          types.String `tfsdk:"target"`
+	FailedLocations types.Int64  `tfsdk:"failed_locations"`
+	Locations       types.Set    `tfsdk:"locations"`
+	HTTPMethod      types.String `tfsdk:"http_method"`
+	MaxRedirects    types.Int64  `tfsdk:"max_redirects"`
+	Keyword         types.String `tfsdk:"keyword"`
+	HTTPCodes       types.List   `tfsdk:"accepted_http_codes"`
+	VerSSLCert      types.Bool   `tfsdk:"verify_ssl_certificate"`
+	VerSSLHost      types.Bool   `tfsdk:"verify_ssl_host"`
+}
+
+type uptimePingMonitorModel struct {
+	uptimeCommonModel
+	Target          types.String `tfsdk:"target"`
+	FailedLocations types.Int64  `tfsdk:"failed_locations"`
+	Locations       types.Set    `tfsdk:"locations"`
+}
+
+type uptimeSMTPMonitorModel struct {
+	uptimeCommonModel
+	Target          types.String `tfsdk:"target"`
+	Port            types.Int64  `tfsdk:"port"`
+	SMTPUser        types.String `tfsdk:"smtp_user"`
+	SMTPPass        types.String `tfsdk:"smtp_password"`
+	FailedLocations types.Int64  `tfsdk:"failed_locations"`
+	Locations       types.Set    `tfsdk:"locations"`
+	VerSSLCert      types.Bool   `tfsdk:"verify_ssl_certificate"`
+	VerSSLHost      types.Bool   `tfsdk:"verify_ssl_host"`
+}
+
+type uptimeHeartbeatMonitorModel struct {
+	uptimeCommonModel
+	Grace      types.Int64  `tfsdk:"grace"`
+	InfoPublic types.Bool   `tfsdk:"info_public"`
+	CPUPublic  types.Bool   `tfsdk:"cpu_public"`
+	RAMPublic  types.Bool   `tfsdk:"ram_public"`
+	DiskPublic types.Bool   `tfsdk:"disk_public"`
+	NetPublic  types.Bool   `tfsdk:"net_public"`
+	ServerID   types.String `tfsdk:"server_id"`
+}
+
+func newUptimeHTTPMonitorResource() resource.Resource {
+	return &uptimeMonitorResource{monitorType: uptimeMonitorHTTP}
+}
+
+func newUptimePingMonitorResource() resource.Resource {
+	return &uptimeMonitorResource{monitorType: uptimeMonitorPing}
+}
+
+func newUptimeSMTPMonitorResource() resource.Resource {
+	return &uptimeMonitorResource{monitorType: uptimeMonitorSMTP}
+}
+
+func newUptimeHeartbeatMonitorResource() resource.Resource {
+	return &uptimeMonitorResource{monitorType: uptimeMonitorHeartbeat}
+}
 
 func (r *uptimeMonitorResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_uptime_monitor"
+	resp.TypeName = req.ProviderTypeName + "_uptime_monitor_" + string(r.monitorType)
 }
 
 func (r *uptimeMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Manages a HetrixTools uptime monitor.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Computed:      true,
-				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-			"type":                   schema.StringAttribute{Required: true, MarkdownDescription: "Monitor type: `http`, `ping`, `smtp`, or `heartbeat`. Changing this forces replacement.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
-			"name":                   schema.StringAttribute{Required: true},
-			"target":                 optionalComputedString(),
-			"port":                   schema.Int64Attribute{Optional: true, MarkdownDescription: "Port used for SMTP monitors. Required when `type = \"smtp\"`."},
-			"http_method":            optionalComputedString(),
-			"max_redirects":          optionalComputedInt64(),
-			"smtp_user":              optionalComputedString(),
-			"smtp_password":          optionalComputedSensitiveString(),
-			"timeout":                optionalComputedInt64(),
-			"frequency":              optionalComputedInt64(),
-			"fails_before_alert":     optionalComputedInt64(),
-			"failed_locations":       optionalComputedInt64(),
-			"contact_list_id":        optionalComputedString(),
-			"category":               optionalComputedString(),
-			"alert_after":            optionalComputedString(),
-			"repeat_times":           optionalComputedInt64(),
-			"repeat_every":           optionalComputedString(),
-			"public":                 optionalComputedBool(),
-			"show_target":            optionalComputedBool(),
-			"verify_ssl_certificate": optionalComputedBool(),
-			"verify_ssl_host":        optionalComputedBool(),
-			"locations": schema.SetAttribute{
-				Optional:            true,
-				Computed:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Set of canonical HetrixTools v3 location names enabled for this monitor, e.g. `[\"amsterdam\", \"new_york\"]`.",
-				PlanModifiers:       []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
-			},
-			"keyword":             optionalComputedString(),
-			"accepted_http_codes": optionalComputedInt64List(),
-			"grace":               optionalComputedInt64(),
-			"info_public":         optionalComputedBool(),
-			"cpu_public":          optionalComputedBool(),
-			"ram_public":          optionalComputedBool(),
-			"disk_public":         optionalComputedBool(),
-			"net_public":          optionalComputedBool(),
-			"server_id": schema.StringAttribute{
-				Computed:      true,
-				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
-		},
+	attributes := uptimeCommonAttributes()
+	switch r.monitorType {
+	case uptimeMonitorHTTP:
+		attributes["target"] = schema.StringAttribute{Required: true, MarkdownDescription: "URL to check."}
+		addUptimeLocationAttributes(attributes)
+		attributes["http_method"] = optionalComputedString()
+		attributes["max_redirects"] = optionalComputedInt64()
+		attributes["keyword"] = optionalComputedString()
+		attributes["accepted_http_codes"] = optionalComputedInt64List()
+		addUptimeSSLAttributes(attributes)
+	case uptimeMonitorPing:
+		attributes["target"] = schema.StringAttribute{Required: true, MarkdownDescription: "Hostname or IP address to ping."}
+		addUptimeLocationAttributes(attributes)
+	case uptimeMonitorSMTP:
+		attributes["target"] = schema.StringAttribute{Required: true, MarkdownDescription: "SMTP hostname."}
+		attributes["port"] = schema.Int64Attribute{Required: true, MarkdownDescription: "SMTP port."}
+		attributes["smtp_user"] = optionalComputedString()
+		attributes["smtp_password"] = optionalComputedSensitiveString()
+		addUptimeLocationAttributes(attributes)
+		addUptimeSSLAttributes(attributes)
+	case uptimeMonitorHeartbeat:
+		attributes["grace"] = optionalComputedInt64()
+		attributes["info_public"] = optionalComputedBool()
+		attributes["cpu_public"] = optionalComputedBool()
+		attributes["ram_public"] = optionalComputedBool()
+		attributes["disk_public"] = optionalComputedBool()
+		attributes["net_public"] = optionalComputedBool()
+		attributes["server_id"] = schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}
 	}
+	resp.Schema = schema.Schema{
+		MarkdownDescription: fmt.Sprintf("Manages a HetrixTools %s uptime monitor.", r.monitorType),
+		Attributes:          attributes,
+	}
+}
+
+func uptimeCommonAttributes() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"id": schema.StringAttribute{
+			Computed:      true,
+			PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+		},
+		"name":               schema.StringAttribute{Required: true},
+		"timeout":            optionalComputedInt64(),
+		"frequency":          optionalComputedInt64(),
+		"fails_before_alert": optionalComputedInt64(),
+		"contact_list_id":    optionalComputedString(),
+		"category":           optionalComputedString(),
+		"alert_after":        optionalComputedString(),
+		"repeat_times":       optionalComputedInt64(),
+		"repeat_every":       optionalComputedString(),
+		"public":             optionalComputedBool(),
+		"show_target":        optionalComputedBool(),
+	}
+}
+
+func addUptimeLocationAttributes(attributes map[string]schema.Attribute) {
+	attributes["failed_locations"] = optionalComputedInt64()
+	attributes["locations"] = schema.SetAttribute{
+		Optional:            true,
+		Computed:            true,
+		ElementType:         types.StringType,
+		MarkdownDescription: "Set of canonical HetrixTools v3 location names enabled for this monitor, e.g. `[\"amsterdam\", \"new_york\"]`.",
+		PlanModifiers:       []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
+	}
+}
+
+func addUptimeSSLAttributes(attributes map[string]schema.Attribute) {
+	attributes["verify_ssl_certificate"] = optionalComputedBool()
+	attributes["verify_ssl_host"] = optionalComputedBool()
 }
 
 func optionalComputedString() schema.StringAttribute {
@@ -148,160 +216,184 @@ func (r *uptimeMonitorResource) Configure(_ context.Context, req resource.Config
 	r.client = c
 }
 
-func (r *uptimeMonitorResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
-	var config uptimeMonitorModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
-	if resp.Diagnostics.HasError() || config.Type.IsNull() || config.Type.IsUnknown() {
-		return
-	}
-	validateUptimeMonitorModel(&resp.Diagnostics, config)
-}
-
-func validateUptimeMonitorModel(diagnostics interface{ AddError(string, string) }, config uptimeMonitorModel) {
-	monitorType := config.Type.ValueString()
-	switch monitorType {
-	case "http", "ping", "smtp", "heartbeat":
-	default:
-		diagnostics.AddError("Invalid uptime monitor type", "type must be one of: http, ping, smtp, heartbeat")
-		return
-	}
-
-	if monitorType != "http" {
-		addIfSetString(diagnostics, config.HTTPMethod, "http_method is only supported for http uptime monitors")
-		addIfSetInt64(diagnostics, config.MaxRedirects, "max_redirects is only supported for http uptime monitors")
-		addIfSetString(diagnostics, config.Keyword, "keyword is only supported for http uptime monitors")
-		if !config.HTTPCodes.IsNull() && !config.HTTPCodes.IsUnknown() {
-			diagnostics.AddError("Invalid uptime monitor configuration", "accepted_http_codes is only supported for http uptime monitors")
-		}
-	}
-	if monitorType != "smtp" {
-		addIfSetInt64(diagnostics, config.Port, "port is only supported for smtp uptime monitors")
-		addIfSetString(diagnostics, config.SMTPUser, "smtp_user is only supported for smtp uptime monitors")
-		addIfSetString(diagnostics, config.SMTPPass, "smtp_password is only supported for smtp uptime monitors")
-	}
-	if monitorType == "smtp" && (config.Port.IsNull() || config.Port.IsUnknown()) {
-		diagnostics.AddError("Invalid uptime monitor configuration", "port is required for smtp uptime monitors")
-	}
-	if setString(config.SMTPUser) != setString(config.SMTPPass) {
-		diagnostics.AddError("Invalid uptime monitor configuration", "smtp_user and smtp_password must be set together")
-	}
-	if monitorType == "http" || monitorType == "ping" || monitorType == "smtp" {
-		if !setString(config.Target) {
-			diagnostics.AddError("Invalid uptime monitor configuration", fmt.Sprintf("target is required for %s uptime monitors", monitorType))
-		}
-	}
-	if monitorType != "heartbeat" {
-		addIfSetInt64(diagnostics, config.Grace, "grace is only supported for heartbeat uptime monitors")
-		addIfSetBool(diagnostics, config.InfoPublic, "info_public is only supported for heartbeat uptime monitors")
-		addIfSetBool(diagnostics, config.CPUPublic, "cpu_public is only supported for heartbeat uptime monitors")
-		addIfSetBool(diagnostics, config.RAMPublic, "ram_public is only supported for heartbeat uptime monitors")
-		addIfSetBool(diagnostics, config.DiskPublic, "disk_public is only supported for heartbeat uptime monitors")
-		addIfSetBool(diagnostics, config.NetPublic, "net_public is only supported for heartbeat uptime monitors")
-	}
-	if monitorType == "heartbeat" {
-		addIfSetString(diagnostics, config.Target, "target is not supported for heartbeat uptime monitors")
-		addIfSetInt64(diagnostics, config.FailedLocations, "failed_locations is not supported for heartbeat uptime monitors")
-		if !config.Locations.IsNull() && !config.Locations.IsUnknown() {
-			diagnostics.AddError("Invalid uptime monitor configuration", "locations is not supported for heartbeat uptime monitors")
-		}
-	}
-	if monitorType != "http" && monitorType != "smtp" {
-		addIfSetBool(diagnostics, config.VerSSLCert, "verify_ssl_certificate is only supported for http and smtp uptime monitors")
-		addIfSetBool(diagnostics, config.VerSSLHost, "verify_ssl_host is only supported for http and smtp uptime monitors")
-	}
-}
-
-func addIfSetString(diagnostics interface{ AddError(string, string) }, value types.String, message string) {
-	if setString(value) {
-		diagnostics.AddError("Invalid uptime monitor configuration", message)
-	}
-}
-
-func addIfSetInt64(diagnostics interface{ AddError(string, string) }, value types.Int64, message string) {
-	if !value.IsNull() && !value.IsUnknown() {
-		diagnostics.AddError("Invalid uptime monitor configuration", message)
-	}
-}
-
-func addIfSetBool(diagnostics interface{ AddError(string, string) }, value types.Bool, message string) {
-	if !value.IsNull() && !value.IsUnknown() {
-		diagnostics.AddError("Invalid uptime monitor configuration", message)
-	}
-}
-
-func setString(value types.String) bool {
-	return !value.IsNull() && !value.IsUnknown() && value.ValueString() != ""
-}
-
 func (r *uptimeMonitorResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan uptimeMonitorModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	action, err := r.client.CreateUptimeMonitor(ctx, uptimeMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	if err != nil {
-		resp.Diagnostics.AddError("Create uptime monitor failed", err.Error())
-		return
-	}
-	if action != nil {
-		if action.MonitorID != "" {
-			plan.ID = types.StringValue(action.MonitorID)
+	switch r.monitorType {
+	case uptimeMonitorHTTP:
+		var plan uptimeHTTPMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
-		if action.ServerID != "" {
-			plan.ServerID = types.StringValue(action.ServerID)
+		action, err := r.client.CreateUptimeMonitor(ctx, uptimeHTTPMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorPing:
+		var plan uptimePingMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.CreateUptimeMonitor(ctx, uptimePingMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorSMTP:
+		var plan uptimeSMTPMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.CreateUptimeMonitor(ctx, uptimeSMTPMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorHeartbeat:
+		var plan uptimeHeartbeatMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.CreateUptimeMonitor(ctx, uptimeHeartbeatMonitorRequestFromModel(plan))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, &plan.ServerID) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		}
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *uptimeMonitorResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var state uptimeMonitorModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
+	switch r.monitorType {
+	case uptimeMonitorHTTP:
+		var state uptimeHTTPMonitorModel
+		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		monitor, ok := r.readUptimeMonitor(ctx, state.ID.ValueString(), &resp.Diagnostics, resp.State.RemoveResource)
+		if !ok {
+			return
+		}
+		state = uptimeHTTPMonitorModelFromAPI(ctx, state, *monitor, &resp.Diagnostics)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	case uptimeMonitorPing:
+		var state uptimePingMonitorModel
+		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		monitor, ok := r.readUptimeMonitor(ctx, state.ID.ValueString(), &resp.Diagnostics, resp.State.RemoveResource)
+		if !ok {
+			return
+		}
+		state = uptimePingMonitorModelFromAPI(ctx, state, *monitor, &resp.Diagnostics)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	case uptimeMonitorSMTP:
+		var state uptimeSMTPMonitorModel
+		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		monitor, ok := r.readUptimeMonitor(ctx, state.ID.ValueString(), &resp.Diagnostics, resp.State.RemoveResource)
+		if !ok {
+			return
+		}
+		state = uptimeSMTPMonitorModelFromAPI(ctx, state, *monitor, &resp.Diagnostics)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	case uptimeMonitorHeartbeat:
+		var state uptimeHeartbeatMonitorModel
+		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		monitor, ok := r.readUptimeMonitor(ctx, state.ID.ValueString(), &resp.Diagnostics, resp.State.RemoveResource)
+		if !ok {
+			return
+		}
+		state = uptimeHeartbeatMonitorModelFromAPI(state, *monitor)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	}
-	found, err := r.find(ctx, state.ID.ValueString())
+}
+
+func (r *uptimeMonitorResource) readUptimeMonitor(ctx context.Context, id string, diagnostics interface{ AddError(string, string) }, remove func(context.Context)) (*hetrixtools.UptimeMonitor, bool) {
+	found, err := r.client.GetUptimeMonitor(ctx, id)
 	if err != nil {
-		resp.Diagnostics.AddError("Read uptime monitor failed", err.Error())
-		return
+		diagnostics.AddError("Read uptime monitor failed", err.Error())
+		return nil, false
 	}
 	if found == nil {
-		resp.State.RemoveResource(ctx)
-		return
+		remove(ctx)
+		return nil, false
 	}
-	state = uptimeMonitorModelFromAPI(ctx, state, *found, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
+	if found.Type != string(r.monitorType) {
+		diagnostics.AddError("Unexpected uptime monitor type", fmt.Sprintf("Imported monitor has type %q, but this resource manages %q monitors.", found.Type, r.monitorType))
+		return nil, false
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	return found, true
 }
 
 func (r *uptimeMonitorResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan uptimeMonitorModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
+	switch r.monitorType {
+	case uptimeMonitorHTTP:
+		var plan uptimeHTTPMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.UpdateUptimeMonitor(ctx, uptimeHTTPMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorPing:
+		var plan uptimePingMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.UpdateUptimeMonitor(ctx, uptimePingMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorSMTP:
+		var plan uptimeSMTPMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.UpdateUptimeMonitor(ctx, uptimeSMTPMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, nil) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
+	case uptimeMonitorHeartbeat:
+		var plan uptimeHeartbeatMonitorModel
+		resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		action, err := r.client.UpdateUptimeMonitor(ctx, uptimeHeartbeatMonitorRequestFromModel(plan))
+		if finishUptimeMutation(resp.Diagnostics.AddError, action, err, &plan.uptimeCommonModel, &plan.ServerID) {
+			resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		}
 	}
-	action, err := r.client.UpdateUptimeMonitor(ctx, uptimeMonitorRequestFromModel(ctx, plan, &resp.Diagnostics))
-	if resp.Diagnostics.HasError() {
-		return
-	}
+}
+
+func finishUptimeMutation(addError func(string, string), action *hetrixtools.ActionResponse, err error, common *uptimeCommonModel, serverID *types.String) bool {
 	if err != nil {
-		resp.Diagnostics.AddError("Update uptime monitor failed", err.Error())
-		return
+		addError("Uptime monitor mutation failed", err.Error())
+		return false
 	}
-	if action != nil && action.ServerID != "" {
-		plan.ServerID = types.StringValue(action.ServerID)
+	if action != nil {
+		if action.MonitorID != "" {
+			common.ID = types.StringValue(action.MonitorID)
+		}
+		if serverID != nil && action.ServerID != "" {
+			*serverID = types.StringValue(action.ServerID)
+		}
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	return true
 }
 
 func (r *uptimeMonitorResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state uptimeMonitorModel
+	var state uptimeCommonModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -316,30 +408,12 @@ func (r *uptimeMonitorResource) ImportState(ctx context.Context, req resource.Im
 	resource.ImportStatePassthroughID(ctx, pathRoot("id"), req, resp)
 }
 
-func (r *uptimeMonitorResource) find(ctx context.Context, id string) (*hetrixtools.UptimeMonitor, error) {
-	return r.client.GetUptimeMonitor(ctx, id)
-}
-
-func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimeMonitorModel {
+func uptimeCommonModelFromAPI(state uptimeCommonModel, monitor hetrixtools.UptimeMonitor) uptimeCommonModel {
 	state.ID = types.StringValue(monitor.ID)
-	state.Type = types.StringValue(monitor.Type)
 	state.Name = types.StringValue(monitor.Name)
-	state.Target = types.StringValue(monitor.Target)
-	if monitor.Port == nil {
-		state.Port = types.Int64Null()
-	} else {
-		state.Port = types.Int64Value(*monitor.Port)
-	}
-	state.HTTPMethod = stringNullIfEmpty(monitor.HTTPMethod)
-	state.MaxRedirects = types.Int64Value(monitor.MaxRedirects)
-	state.SMTPUser = stringNullIfEmpty(monitor.SMTPUser)
-	if state.SMTPPass.IsNull() || state.SMTPPass.IsUnknown() {
-		state.SMTPPass = types.StringNull()
-	}
 	state.Timeout = types.Int64Value(monitor.Timeout)
 	state.Frequency = types.Int64Value(monitor.Frequency)
 	state.FailsBeforeAlert = types.Int64Value(monitor.FailsBeforeAlert)
-	state.FailedLocations = types.Int64Value(monitor.FailedLocations)
 	state.ContactList = stringNullIfEmpty(monitor.ContactListID)
 	state.Category = stringNullIfEmpty(monitor.Category)
 	state.AlertAfter = stringNullIfEmpty(monitor.AlertAfter)
@@ -347,10 +421,50 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	state.RepeatEvery = stringNullIfEmpty(monitor.RepeatEvery)
 	state.Public = boolFromPointer(monitor.Public)
 	state.ShowTarget = boolFromPointer(monitor.ShowTarget)
-	state.VerSSLCert = boolFromPointer(monitor.VerSSLCert)
-	state.VerSSLHost = boolFromPointer(monitor.VerSSLHost)
+	return state
+}
+
+func uptimeHTTPMonitorModelFromAPI(ctx context.Context, state uptimeHTTPMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimeHTTPMonitorModel {
+	state.uptimeCommonModel = uptimeCommonModelFromAPI(state.uptimeCommonModel, monitor)
+	state.Target = types.StringValue(monitor.Target)
+	state.FailedLocations = types.Int64Value(monitor.FailedLocations)
+	state.Locations = locationsSetFromAPI(ctx, state.Locations, monitor.Locations, diagnostics)
+	state.HTTPMethod = stringNullIfEmpty(monitor.HTTPMethod)
+	state.MaxRedirects = types.Int64Value(monitor.MaxRedirects)
 	state.Keyword = stringNullIfEmpty(monitor.Keyword)
 	state.HTTPCodes = int64ListFromAPI(ctx, state.HTTPCodes, monitor.HTTPCodes, diagnostics)
+	state.VerSSLCert = boolFromPointer(monitor.VerSSLCert)
+	state.VerSSLHost = boolFromPointer(monitor.VerSSLHost)
+	return state
+}
+
+func uptimePingMonitorModelFromAPI(ctx context.Context, state uptimePingMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimePingMonitorModel {
+	state.uptimeCommonModel = uptimeCommonModelFromAPI(state.uptimeCommonModel, monitor)
+	state.Target = types.StringValue(monitor.Target)
+	state.FailedLocations = types.Int64Value(monitor.FailedLocations)
+	state.Locations = locationsSetFromAPI(ctx, state.Locations, monitor.Locations, diagnostics)
+	return state
+}
+
+func uptimeSMTPMonitorModelFromAPI(ctx context.Context, state uptimeSMTPMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimeSMTPMonitorModel {
+	state.uptimeCommonModel = uptimeCommonModelFromAPI(state.uptimeCommonModel, monitor)
+	state.Target = types.StringValue(monitor.Target)
+	if monitor.Port != nil {
+		state.Port = types.Int64Value(*monitor.Port)
+	}
+	state.SMTPUser = stringNullIfEmpty(monitor.SMTPUser)
+	if state.SMTPPass.IsNull() || state.SMTPPass.IsUnknown() {
+		state.SMTPPass = types.StringNull()
+	}
+	state.FailedLocations = types.Int64Value(monitor.FailedLocations)
+	state.Locations = locationsSetFromAPI(ctx, state.Locations, monitor.Locations, diagnostics)
+	state.VerSSLCert = boolFromPointer(monitor.VerSSLCert)
+	state.VerSSLHost = boolFromPointer(monitor.VerSSLHost)
+	return state
+}
+
+func uptimeHeartbeatMonitorModelFromAPI(state uptimeHeartbeatMonitorModel, monitor hetrixtools.UptimeMonitor) uptimeHeartbeatMonitorModel {
+	state.uptimeCommonModel = uptimeCommonModelFromAPI(state.uptimeCommonModel, monitor)
 	state.Grace = types.Int64Value(monitor.Grace)
 	state.InfoPublic = boolFromPointer(monitor.InfoPublic)
 	state.CPUPublic = boolFromPointer(monitor.CPUPublic)
@@ -362,18 +476,19 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	} else {
 		state.ServerID = stringNullIfEmpty(*monitor.ServerID)
 	}
-
-	if monitor.Locations == nil {
-		state.Locations = types.SetNull(types.StringType)
-	} else {
-		locations, diags := types.SetValueFrom(ctx, types.StringType, monitor.Locations)
-		if diags.HasError() {
-			diagnostics.AddError("Invalid uptime monitor locations", fmt.Sprintf("Could not encode locations: %v", diags))
-			return state
-		}
-		state.Locations = locations
-	}
 	return state
+}
+
+func locationsSetFromAPI(ctx context.Context, current types.Set, locations []string, diagnostics interface{ AddError(string, string) }) types.Set {
+	if locations == nil {
+		return types.SetNull(types.StringType)
+	}
+	set, diags := types.SetValueFrom(ctx, types.StringType, locations)
+	if diags.HasError() {
+		diagnostics.AddError("Invalid uptime monitor locations", fmt.Sprintf("Could not encode locations: %v", diags))
+		return current
+	}
+	return set
 }
 
 func boolFromPointer(value *bool) types.Bool {
@@ -405,62 +520,98 @@ func int64ListFromAPI(ctx context.Context, current types.List, values []int64, d
 	return list
 }
 
-func uptimeMonitorRequestFromModel(ctx context.Context, model uptimeMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
-	var locationValues []string
-	if !model.Locations.IsNull() && !model.Locations.IsUnknown() {
-		var locations []types.String
-		if diags := model.Locations.ElementsAs(ctx, &locations, false); diags.HasError() {
-			diagnostics.AddError("Invalid locations", fmt.Sprintf("Could not decode locations: %v", diags))
-			return hetrixtools.UptimeMonitorRequest{}
-		}
-		for _, location := range locations {
-			if !location.IsNull() && !location.IsUnknown() {
-				locationValues = append(locationValues, location.ValueString())
-			}
-		}
-	}
-
-	var httpCodes []int64
-	if !model.HTTPCodes.IsNull() && !model.HTTPCodes.IsUnknown() {
-		if diags := model.HTTPCodes.ElementsAs(ctx, &httpCodes, false); diags.HasError() {
-			diagnostics.AddError("Invalid accepted_http_codes", fmt.Sprintf("Could not decode accepted_http_codes: %v", diags))
-			return hetrixtools.UptimeMonitorRequest{}
-		}
-	}
-
+func uptimeCommonRequestFromModel(common uptimeCommonModel, monitorType uptimeMonitorType) hetrixtools.UptimeMonitorRequest {
 	return hetrixtools.UptimeMonitorRequest{
-		MID:              stringValue(model.ID, ""),
-		Type:             model.Type.ValueString(),
-		Name:             model.Name.ValueString(),
-		Target:           stringValue(model.Target, ""),
-		Port:             int64Value(model.Port, 0),
-		HTTPMethod:       stringValue(model.HTTPMethod, ""),
-		MaxRedirects:     int64Value(model.MaxRedirects, 0),
-		SMTPUser:         stringValue(model.SMTPUser, ""),
-		SMTPPass:         stringValue(model.SMTPPass, ""),
-		Timeout:          int64Value(model.Timeout, 0),
-		Frequency:        int64Value(model.Frequency, 0),
-		FailsBeforeAlert: int64Value(model.FailsBeforeAlert, 0),
-		FailedLocations:  int64Value(model.FailedLocations, 0),
-		ContactList:      stringValue(model.ContactList, ""),
-		Category:         stringValue(model.Category, ""),
-		AlertAfter:       stringValue(model.AlertAfter, ""),
-		RepeatTimes:      int64Value(model.RepeatTimes, 0),
-		RepeatEvery:      stringValue(model.RepeatEvery, ""),
-		Public:           boolPointer(model.Public),
-		ShowTarget:       boolPointer(model.ShowTarget),
-		VerSSLCert:       boolPointer(model.VerSSLCert),
-		VerSSLHost:       boolPointer(model.VerSSLHost),
-		Locations:        locationValues,
-		Keyword:          stringValue(model.Keyword, ""),
-		HTTPCodes:        httpCodes,
-		Grace:            int64Value(model.Grace, 0),
-		INFOPub:          boolPointer(model.InfoPublic),
-		CPUPub:           boolPointer(model.CPUPublic),
-		RAMPub:           boolPointer(model.RAMPublic),
-		DISKPub:          boolPointer(model.DiskPublic),
-		NETPub:           boolPointer(model.NetPublic),
+		MID:              stringValue(common.ID, ""),
+		Type:             string(monitorType),
+		Name:             common.Name.ValueString(),
+		Timeout:          int64Value(common.Timeout, 0),
+		Frequency:        int64Value(common.Frequency, 0),
+		FailsBeforeAlert: int64Value(common.FailsBeforeAlert, 0),
+		ContactList:      stringValue(common.ContactList, ""),
+		Category:         stringValue(common.Category, ""),
+		AlertAfter:       stringValue(common.AlertAfter, ""),
+		RepeatTimes:      int64Value(common.RepeatTimes, 0),
+		RepeatEvery:      stringValue(common.RepeatEvery, ""),
+		Public:           boolPointer(common.Public),
+		ShowTarget:       boolPointer(common.ShowTarget),
 	}
+}
+
+func uptimeHTTPMonitorRequestFromModel(ctx context.Context, model uptimeHTTPMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
+	request := uptimeCommonRequestFromModel(model.uptimeCommonModel, uptimeMonitorHTTP)
+	request.Target = model.Target.ValueString()
+	request.FailedLocations = int64Value(model.FailedLocations, 0)
+	request.Locations = locationValuesFromSet(ctx, model.Locations, diagnostics)
+	request.HTTPMethod = stringValue(model.HTTPMethod, "")
+	request.MaxRedirects = int64Value(model.MaxRedirects, 0)
+	request.Keyword = stringValue(model.Keyword, "")
+	request.HTTPCodes = int64ValuesFromList(ctx, model.HTTPCodes, diagnostics)
+	request.VerSSLCert = boolPointer(model.VerSSLCert)
+	request.VerSSLHost = boolPointer(model.VerSSLHost)
+	return request
+}
+
+func uptimePingMonitorRequestFromModel(ctx context.Context, model uptimePingMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
+	request := uptimeCommonRequestFromModel(model.uptimeCommonModel, uptimeMonitorPing)
+	request.Target = model.Target.ValueString()
+	request.FailedLocations = int64Value(model.FailedLocations, 0)
+	request.Locations = locationValuesFromSet(ctx, model.Locations, diagnostics)
+	return request
+}
+
+func uptimeSMTPMonitorRequestFromModel(ctx context.Context, model uptimeSMTPMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
+	request := uptimeCommonRequestFromModel(model.uptimeCommonModel, uptimeMonitorSMTP)
+	request.Target = model.Target.ValueString()
+	request.Port = model.Port.ValueInt64()
+	request.SMTPUser = stringValue(model.SMTPUser, "")
+	request.SMTPPass = stringValue(model.SMTPPass, "")
+	request.FailedLocations = int64Value(model.FailedLocations, 0)
+	request.Locations = locationValuesFromSet(ctx, model.Locations, diagnostics)
+	request.VerSSLCert = boolPointer(model.VerSSLCert)
+	request.VerSSLHost = boolPointer(model.VerSSLHost)
+	return request
+}
+
+func uptimeHeartbeatMonitorRequestFromModel(model uptimeHeartbeatMonitorModel) hetrixtools.UptimeMonitorRequest {
+	request := uptimeCommonRequestFromModel(model.uptimeCommonModel, uptimeMonitorHeartbeat)
+	request.Grace = int64Value(model.Grace, 0)
+	request.INFOPub = boolPointer(model.InfoPublic)
+	request.CPUPub = boolPointer(model.CPUPublic)
+	request.RAMPub = boolPointer(model.RAMPublic)
+	request.DISKPub = boolPointer(model.DiskPublic)
+	request.NETPub = boolPointer(model.NetPublic)
+	return request
+}
+
+func locationValuesFromSet(ctx context.Context, locationsSet types.Set, diagnostics interface{ AddError(string, string) }) []string {
+	if locationsSet.IsNull() || locationsSet.IsUnknown() {
+		return nil
+	}
+	var locations []types.String
+	if diags := locationsSet.ElementsAs(ctx, &locations, false); diags.HasError() {
+		diagnostics.AddError("Invalid locations", fmt.Sprintf("Could not decode locations: %v", diags))
+		return nil
+	}
+	values := make([]string, 0, len(locations))
+	for _, location := range locations {
+		if !location.IsNull() && !location.IsUnknown() {
+			values = append(values, location.ValueString())
+		}
+	}
+	return values
+}
+
+func int64ValuesFromList(ctx context.Context, list types.List, diagnostics interface{ AddError(string, string) }) []int64 {
+	if list.IsNull() || list.IsUnknown() {
+		return nil
+	}
+	var values []int64
+	if diags := list.ElementsAs(ctx, &values, false); diags.HasError() {
+		diagnostics.AddError("Invalid accepted_http_codes", fmt.Sprintf("Could not decode accepted_http_codes: %v", diags))
+		return nil
+	}
+	return values
 }
 
 func boolPointer(value types.Bool) *bool {

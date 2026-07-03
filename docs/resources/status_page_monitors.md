@@ -15,7 +15,7 @@ resource "hetrixtools_status_page_monitors" "example" {
   status_page_id = "00000000000000000000000000000000"
 
   monitor_ids = [
-    hetrixtools_uptime_monitor.web.id,
+    hetrixtools_uptime_monitor_http.web.id,
   ]
 }
 ```

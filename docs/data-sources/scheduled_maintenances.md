@@ -12,7 +12,7 @@ Lists HetrixTools scheduled maintenances.
 
 ```terraform
 data "hetrixtools_scheduled_maintenances" "all" {
-  monitor_id = hetrixtools_uptime_monitor.web.id
+  monitor_id = hetrixtools_uptime_monitor_http.web.id
 }
 ```
 

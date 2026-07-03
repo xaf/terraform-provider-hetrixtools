@@ -13,7 +13,10 @@ The Terraform provider lives in `terraform-provider/` and calls the semantic cli
 Resources:
 
 - `hetrixtools_blacklist_monitor`
-- `hetrixtools_uptime_monitor`
+- `hetrixtools_uptime_monitor_http`
+- `hetrixtools_uptime_monitor_ping`
+- `hetrixtools_uptime_monitor_smtp`
+- `hetrixtools_uptime_monitor_heartbeat`
 - `hetrixtools_scheduled_maintenance`
 - `hetrixtools_status_page_monitors`
 - `hetrixtools_server_agent`

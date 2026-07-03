@@ -12,7 +12,7 @@ Gets a HetrixTools uptime monitor location fail log.
 
 ```terraform
 data "hetrixtools_uptime_location_fail_log" "example" {
-  monitor_id = hetrixtools_uptime_monitor.web.id
+  monitor_id = hetrixtools_uptime_monitor_http.web.id
 }
 ```
 

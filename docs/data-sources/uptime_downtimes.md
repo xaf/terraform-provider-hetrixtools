@@ -12,7 +12,7 @@ Lists HetrixTools uptime monitor downtimes.
 
 ```terraform
 data "hetrixtools_uptime_downtimes" "example" {
-  monitor_id = hetrixtools_uptime_monitor.web.id
+  monitor_id = hetrixtools_uptime_monitor_http.web.id
 }
 ```
 
