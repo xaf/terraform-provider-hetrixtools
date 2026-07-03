@@ -25,7 +25,9 @@ func (c *Client) DetachServerAgent(ctx context.Context, monitorID string) error 
 	return c.deleteJSON(ctx, "/uptime-monitors/"+monitorID+"/server-agent", nil)
 }
 
-// GetServerAgentWarningPolicies returns server-agent warning policies for an uptime monitor.
+// GetServerAgentWarningPolicies returns server-agent warning policies for an
+// uptime monitor as a decoded JSON value, typically a map[string]any. The shape
+// mirrors the HetrixTools v3 warning-policies payload.
 func (c *Client) GetServerAgentWarningPolicies(ctx context.Context, monitorID string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/uptime-monitors/"+monitorID+"/server-agent/warning-policies", nil)
 	if err != nil {

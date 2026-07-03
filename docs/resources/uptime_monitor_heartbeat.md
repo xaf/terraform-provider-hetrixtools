@@ -8,6 +8,8 @@ description: |-
 
 Manages a HetrixTools heartbeat uptime monitor, also called a server-agent monitor in parts of the HetrixTools API.
 
+Create, update, delete, and import operations are paced by the shared HetrixTools client to avoid API rate limits. See the client rate-limiting notes and HetrixTools API references in the provider index.
+
 ## Example Usage
 
 ```terraform

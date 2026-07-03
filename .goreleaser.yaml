@@ -4,7 +4,8 @@ project_name: hetrixtools
 
 builds:
   - id: terraform-provider
-    main: ./terraform-provider
+    dir: ./terraform-provider
+    main: .
     binary: terraform-provider-hetrixtools_v{{ .Version }}
     env:
       - CGO_ENABLED=0
@@ -55,3 +56,7 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+
+after:
+  hooks:
+    - cmd: sh -c 'GOPROXY=https://proxy.golang.org go list -m github.com/xaf/terraform-provider-hetrixtools@v{{ .Version }} >/dev/null || true; curl -fsS "https://pkg.go.dev/fetch/github.com/xaf/terraform-provider-hetrixtools/client@v{{ .Version }}" >/dev/null || true'

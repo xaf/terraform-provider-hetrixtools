@@ -12,7 +12,7 @@ This project is not affiliated with, endorsed by, or supported by HetrixTools. I
 
 Canonical HCL documentation is published on the Terraform Registry: https://registry.terraform.io/providers/xaf/hetrixtools/latest/docs.
 
-The Go client documentation is published on pkg.go.dev: https://pkg.go.dev/github.com/xaf/terraform-provider-hetrixtools/client.
+Terraform users should use the Registry documentation on this page. The reusable Go client used internally by the provider is documented on pkg.go.dev: https://pkg.go.dev/github.com/xaf/terraform-provider-hetrixtools/client.
 
 ## Example Usage
 
@@ -47,6 +47,19 @@ Environment variables:
 - `HETRIXTOOLS_BASE_URL` for the API root URL. The provider appends `/v2` and `/v3`.
 - `HETRIXTOOLS_BASE_URL_V2` to override only the v2 API base URL.
 - `HETRIXTOOLS_BASE_URL_V3` to override only the v3 API base URL.
+
+## Client Rate Limiting
+
+The provider delegates request pacing, retries, and rate-limit reset handling to the reusable Go client. This behavior is based on the HetrixTools API overview and v3 reference:
+
+- https://docs.hetrixtools.com/understanding-our-apis/
+- https://docs.hetrixtools.com/api-v3/
+
+Legacy v2 token-path endpoints are paced through one shared limiter. v3 REST endpoints are paced through both a user-level limiter and a normalized method/path endpoint limiter.
+
+Client package documentation: https://pkg.go.dev/github.com/xaf/terraform-provider-hetrixtools/client.
+
+This protects HetrixTools API limits, but large applies may take longer when many resources are created, updated, imported, or read. Users should not need to lower Terraform parallelism just to avoid HetrixTools rate limits.
 
 ## Schema
 

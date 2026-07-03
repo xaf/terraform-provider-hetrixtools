@@ -8,7 +8,10 @@ import (
 	"net/url"
 )
 
-// CreateBlacklistMonitor creates a HetrixTools blacklist monitor.
+// CreateBlacklistMonitor creates a HetrixTools blacklist monitor using the
+// documented v2 blacklist add endpoint:
+//
+//   - https://docs.hetrixtools.com/api-add-blacklist-monitor/
 func (c *Client) CreateBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
 	body, err := c.doV2Form(ctx, "/blacklist/add/", request.form())
 	if err != nil {
@@ -18,7 +21,10 @@ func (c *Client) CreateBlacklistMonitor(ctx context.Context, request BlacklistMo
 	return decodeActionResponse(body)
 }
 
-// UpdateBlacklistMonitor updates a HetrixTools blacklist monitor.
+// UpdateBlacklistMonitor updates a HetrixTools blacklist monitor using the
+// documented v2 blacklist edit endpoint:
+//
+//   - https://docs.hetrixtools.com/api-edit-blacklist-monitor/
 func (c *Client) UpdateBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
 	body, err := c.doV2Form(ctx, "/blacklist/edit/", request.form())
 	if err != nil {
@@ -40,7 +46,10 @@ func (c *Client) UpsertBlacklistMonitor(ctx context.Context, request BlacklistMo
 	return c.UpdateBlacklistMonitor(ctx, request)
 }
 
-// DeleteBlacklistMonitor deletes a HetrixTools blacklist monitor by target.
+// DeleteBlacklistMonitor deletes a HetrixTools blacklist monitor by target using
+// the documented v2 blacklist delete endpoint:
+//
+//   - https://docs.hetrixtools.com/api-delete-blacklist-monitor/
 func (c *Client) DeleteBlacklistMonitor(ctx context.Context, target string) error {
 	_, err := c.doV2Form(ctx, "/blacklist/delete/", url.Values{"target": {target}})
 	if err == nil {
@@ -94,7 +103,9 @@ func (c *Client) cachedBlacklistMonitors(ctx context.Context) ([]BlacklistMonito
 	}
 }
 
-// GetBlacklistMonitorReport returns the report for a blacklist monitor identifier.
+// GetBlacklistMonitorReport returns the report for a blacklist monitor
+// identifier as a decoded JSON value, typically a map[string]any. Query keys are
+// passed through to the HetrixTools v3 report endpoint.
 func (c *Client) GetBlacklistMonitorReport(ctx context.Context, identifier string, query map[string]string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/blacklist-monitors/"+identifier+"/report", query)
 	if err != nil {

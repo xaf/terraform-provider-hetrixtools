@@ -8,6 +8,8 @@ description: |-
 
 Manages server-agent warning policies for an uptime monitor. The policy payload mirrors the HetrixTools API JSON schema.
 
+Read, update, and import operations are paced by the shared HetrixTools client to avoid API rate limits. See the client rate-limiting notes and HetrixTools API references in the provider index.
+
 ## Example Usage
 
 ```terraform

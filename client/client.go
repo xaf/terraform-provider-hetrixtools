@@ -53,6 +53,7 @@ type requestLimiter struct {
 	scope    string
 }
 
+// Option customizes a Client created by NewClient or NewClientWithBaseURL.
 type Option func(*Client)
 
 // WithHTTPClient configures the HTTP client used for API requests.
@@ -64,7 +65,9 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-// WithMinimumRequestInterval configures client-side pacing between API calls.
+// WithMinimumRequestInterval configures client-side pacing for both v2 and v3
+// API calls. Passing zero disables pacing and is intended for tests, examples,
+// or callers that provide their own limiter.
 func WithMinimumRequestInterval(interval time.Duration) Option {
 	return func(c *Client) {
 		if interval >= 0 {
@@ -74,7 +77,8 @@ func WithMinimumRequestInterval(interval time.Duration) Option {
 	}
 }
 
-// WithV2RequestInterval configures pacing for v1/v2 token-path API calls.
+// WithV2RequestInterval configures pacing for legacy v2 token-path API calls,
+// which share one client-wide limiter bucket.
 func WithV2RequestInterval(interval time.Duration) Option {
 	return func(c *Client) {
 		if interval >= 0 {
@@ -83,7 +87,8 @@ func WithV2RequestInterval(interval time.Duration) Option {
 	}
 }
 
-// WithV3RequestInterval configures per-endpoint pacing for v3 REST API calls.
+// WithV3RequestInterval configures pacing for v3 REST API calls. The interval
+// applies to both the user-level limiter and per-endpoint limiter.
 func WithV3RequestInterval(interval time.Duration) Option {
 	return func(c *Client) {
 		if interval >= 0 {
@@ -111,12 +116,16 @@ func WithV3BaseURL(baseURL string) Option {
 }
 
 // NewClient returns a client configured with the default HetrixTools base URLs.
+// The returned client uses a 30-second HTTP timeout and default request pacing
+// suitable for HetrixTools rate limits.
 func NewClient(token string, options ...Option) *Client {
 	return NewClientWithBaseURL(DefaultBaseURL, token, options...)
 }
 
 // NewClientWithBaseURL returns a client configured with a custom API root URL.
 // For compatibility, baseURL may also be a versioned /v2 or /v3 URL.
+// The returned client uses a 30-second HTTP timeout and default request pacing
+// suitable for HetrixTools rate limits.
 func NewClientWithBaseURL(baseURL string, token string, options ...Option) *Client {
 	v2BaseURL, v3BaseURL := versionedBaseURLs(baseURL)
 

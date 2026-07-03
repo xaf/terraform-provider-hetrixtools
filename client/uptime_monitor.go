@@ -6,7 +6,11 @@ import (
 	"net/http"
 )
 
-// CreateUptimeMonitor creates a HetrixTools uptime monitor.
+// CreateUptimeMonitor creates a HetrixTools uptime monitor using the documented
+// v2 uptime add endpoint:
+//
+//   - https://docs.hetrixtools.com/api-add-website-ping-service-smtp-uptime-monitor/
+//   - https://docs.hetrixtools.com/api-add-server-agent-uptime-monitor-heartbeat-uptime-monitor/
 func (c *Client) CreateUptimeMonitor(ctx context.Context, request UptimeMonitorRequest) (*ActionResponse, error) {
 	request.MID = ""
 	body, err := c.doV2JSON(ctx, http.MethodPost, "/uptime/add/", request)
@@ -17,7 +21,11 @@ func (c *Client) CreateUptimeMonitor(ctx context.Context, request UptimeMonitorR
 	return decodeActionResponse(body)
 }
 
-// UpdateUptimeMonitor updates a HetrixTools uptime monitor.
+// UpdateUptimeMonitor updates a HetrixTools uptime monitor using the documented
+// v2 uptime add endpoint with MID set, as described by HetrixTools:
+//
+//   - https://docs.hetrixtools.com/api-add-website-ping-service-smtp-uptime-monitor/
+//   - https://docs.hetrixtools.com/api-add-server-agent-uptime-monitor-heartbeat-uptime-monitor/
 func (c *Client) UpdateUptimeMonitor(ctx context.Context, request UptimeMonitorRequest) (*ActionResponse, error) {
 	body, err := c.doV2JSON(ctx, http.MethodPost, "/uptime/add/", request)
 	if err != nil {
@@ -35,7 +43,10 @@ func (c *Client) UpsertUptimeMonitor(ctx context.Context, request UptimeMonitorR
 	return c.UpdateUptimeMonitor(ctx, request)
 }
 
-// DeleteUptimeMonitor deletes a HetrixTools uptime monitor by monitor ID.
+// DeleteUptimeMonitor deletes a HetrixTools uptime monitor by monitor ID using
+// the documented v2 uptime delete endpoint:
+//
+//   - https://docs.hetrixtools.com/api-delete-uptime-monitor/
 func (c *Client) DeleteUptimeMonitor(ctx context.Context, monitorID string) error {
 	_, err := c.doV2JSON(ctx, http.MethodPost, "/uptime/delete/", map[string]string{"MID": monitorID})
 	if err == nil {
@@ -92,7 +103,9 @@ func (c *Client) cachedUptimeMonitors(ctx context.Context) ([]UptimeMonitor, err
 	}
 }
 
-// GetUptimeMonitorReport returns a report for an uptime monitor.
+// GetUptimeMonitorReport returns a report for an uptime monitor as a decoded
+// JSON value, typically a map[string]any. Query keys are passed through to the
+// HetrixTools v3 report endpoint.
 func (c *Client) GetUptimeMonitorReport(ctx context.Context, monitorID string, query map[string]string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/uptime-monitors/"+monitorID+"/report", query)
 	if err != nil {
@@ -101,7 +114,9 @@ func (c *Client) GetUptimeMonitorReport(ctx context.Context, monitorID string, q
 	return decodeUntypedJSON(body)
 }
 
-// ListUptimeMonitorDowntimes returns downtime entries for an uptime monitor.
+// ListUptimeMonitorDowntimes returns downtime entries for an uptime monitor as a
+// decoded JSON value, typically a map[string]any. Query keys are passed through
+// to the HetrixTools v3 downtime endpoint.
 func (c *Client) ListUptimeMonitorDowntimes(ctx context.Context, monitorID string, query map[string]string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/uptime-monitors/"+monitorID+"/downtimes", query)
 	if err != nil {
@@ -110,7 +125,9 @@ func (c *Client) ListUptimeMonitorDowntimes(ctx context.Context, monitorID strin
 	return decodeUntypedJSON(body)
 }
 
-// GetUptimeMonitorLocationFailLog returns location failure logs for an uptime monitor.
+// GetUptimeMonitorLocationFailLog returns location failure logs for an uptime
+// monitor as a decoded JSON value, typically a map[string]any. Query keys are
+// passed through to the HetrixTools v3 location-fail-log endpoint.
 func (c *Client) GetUptimeMonitorLocationFailLog(ctx context.Context, monitorID string, query map[string]string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/uptime-monitors/"+monitorID+"/location-fail-log", query)
 	if err != nil {

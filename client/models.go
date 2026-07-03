@@ -10,68 +10,109 @@ import (
 
 // ActionResponse is the common response returned by HetrixTools mutation endpoints.
 type ActionResponse struct {
-	Status       string `json:"status"`
+	// Status is the API status string, such as SUCCESS.
+	Status string `json:"status"`
+	// ErrorMessage contains the API error message when Status indicates failure.
 	ErrorMessage string `json:"error_message"`
-	MonitorID    string `json:"monitor_id"`
-	ServerID     string `json:"server_id"`
-	Action       string `json:"action"`
+	// MonitorID is the monitor identifier returned by monitor create operations.
+	MonitorID string `json:"monitor_id"`
+	// ServerID is the server-agent identifier returned by heartbeat operations.
+	ServerID string `json:"server_id"`
+	// Action describes the mutation performed when the API returns one.
+	Action string `json:"action"`
 }
 
 // BlacklistCheckResult is the result of a one-off blacklist check.
 type BlacklistCheckResult struct {
-	Status                    string              `json:"status"`
-	ErrorMessage              string              `json:"error_message"`
-	APICallsLeft              int64               `json:"api_calls_left"`
-	BlacklistCheckCreditsLeft int64               `json:"blacklist_check_credits_left"`
-	BlacklistedCount          int64               `json:"blacklisted_count"`
-	BlacklistedOn             []BlacklistListing  `json:"blacklisted_on"`
-	Links                     BlacklistCheckLinks `json:"links"`
-	RawJSON                   []byte              `json:"-"`
+	// Status is the API status string.
+	Status string `json:"status"`
+	// ErrorMessage contains the API error message when a check fails.
+	ErrorMessage string `json:"error_message"`
+	// APICallsLeft is the remaining API call allowance reported by HetrixTools.
+	APICallsLeft int64 `json:"api_calls_left"`
+	// BlacklistCheckCreditsLeft is the remaining blacklist-check credit count.
+	BlacklistCheckCreditsLeft int64 `json:"blacklist_check_credits_left"`
+	// BlacklistedCount is the number of blacklists currently listing the target.
+	BlacklistedCount int64 `json:"blacklisted_count"`
+	// BlacklistedOn lists the individual blacklists that include the target.
+	BlacklistedOn []BlacklistListing `json:"blacklisted_on"`
+	// Links contains HetrixTools report URLs for the check.
+	Links BlacklistCheckLinks `json:"links"`
+	// RawJSON is the original API response body.
+	RawJSON []byte `json:"-"`
 }
 
 // BlacklistListing identifies one blacklist where a target is listed.
 type BlacklistListing struct {
-	RBL    string `json:"rbl"`
+	// RBL is the blacklist provider name.
+	RBL string `json:"rbl"`
+	// Delist is the provider's delisting URL when returned by the API.
 	Delist string `json:"delist"`
 }
 
 // BlacklistCheckLinks contains report URLs returned by a blacklist check.
 type BlacklistCheckLinks struct {
-	ReportLink            string `json:"report_link"`
-	WhitelabelReportLink  string `json:"whitelabel_report_link"`
-	APIReportLink         string `json:"api_report_link"`
+	// ReportLink is the hosted HetrixTools report URL.
+	ReportLink string `json:"report_link"`
+	// WhitelabelReportLink is the whitelabel report URL when available.
+	WhitelabelReportLink string `json:"whitelabel_report_link"`
+	// APIReportLink is the API report URL.
+	APIReportLink string `json:"api_report_link"`
+	// APIBlacklistCheckLink is the API URL for repeating the check.
 	APIBlacklistCheckLink string `json:"api_blacklist_check_link"`
 }
 
 // BlacklistMonitorRequest describes a blacklist monitor create or update request.
+//
+// The client sends this request to the documented HetrixTools v2 blacklist
+// monitor endpoints:
+//
+//   - Add: https://docs.hetrixtools.com/api-add-blacklist-monitor/
+//   - Edit: https://docs.hetrixtools.com/api-edit-blacklist-monitor/
 type BlacklistMonitorRequest struct {
-	Target  string
-	Label   string
+	// Target is an IP address, IP range, CIDR block, or domain name.
+	Target string
+	// Label is an optional human-readable monitor label.
+	Label string
+	// Contact is an optional HetrixTools contact list ID.
 	Contact string
 }
 
 // Pagination describes HetrixTools paginated list metadata.
 type Pagination struct {
-	Current  int  `json:"current"`
-	Last     int  `json:"last"`
+	// Current is the current page number.
+	Current int `json:"current"`
+	// Last is the last page number.
+	Last int `json:"last"`
+	// Previous is the previous page number when available.
 	Previous *int `json:"previous"`
-	Next     *int `json:"next"`
+	// Next is the next page number when available.
+	Next *int `json:"next"`
 }
 
 // Meta contains HetrixTools list response metadata.
 type Meta struct {
-	Total         int        `json:"total"`
-	TotalFiltered int        `json:"total_filtered"`
-	Returned      int        `json:"returned"`
-	Pagination    Pagination `json:"pagination"`
+	// Total is the total item count reported by the API.
+	Total int `json:"total"`
+	// TotalFiltered is the count after API-side filters are applied.
+	TotalFiltered int `json:"total_filtered"`
+	// Returned is the number of items in the current response.
+	Returned int `json:"returned"`
+	// Pagination contains page navigation metadata.
+	Pagination Pagination `json:"pagination"`
 }
 
 // BlacklistMonitor describes a HetrixTools blacklist monitor.
 type BlacklistMonitor struct {
-	ID      string `json:"id"`
-	Target  string `json:"target"`
-	Label   string `json:"label"`
-	Name    string `json:"name"`
+	// ID is the HetrixTools blacklist monitor ID.
+	ID string `json:"id"`
+	// Target is the monitored IP address, CIDR block, range, or domain.
+	Target string `json:"target"`
+	// Label is the monitor label.
+	Label string `json:"label"`
+	// Name is an alternate monitor name returned by some API views.
+	Name string `json:"name"`
+	// Contact is the contact list ID used for notifications.
 	Contact string `json:"contact"`
 }
 
@@ -100,8 +141,10 @@ func (m *BlacklistMonitor) UnmarshalJSON(body []byte) error {
 
 // BlacklistMonitorsResponse is returned by ListBlacklistMonitors.
 type BlacklistMonitorsResponse struct {
+	// BlacklistMonitors contains the returned blacklist monitors.
 	BlacklistMonitors []BlacklistMonitor `json:"blacklist_monitors"`
-	Meta              Meta               `json:"meta"`
+	// Meta contains pagination and result-count metadata.
+	Meta Meta `json:"meta"`
 }
 
 // UnmarshalJSON accepts documented and legacy list envelope names.
@@ -134,41 +177,88 @@ func (r BlacklistMonitorRequest) form() url.Values {
 }
 
 // UptimeMonitorRequest describes an uptime monitor create or update request.
+//
+// The client sends this request to the documented HetrixTools v2 uptime add
+// endpoint for both create and update operations:
+//
+//   - Website, ping, service, and SMTP monitors:
+//     https://docs.hetrixtools.com/api-add-website-ping-service-smtp-uptime-monitor/
+//   - Server-agent heartbeat monitors:
+//     https://docs.hetrixtools.com/api-add-server-agent-uptime-monitor-heartbeat-uptime-monitor/
+//
+// The Go fields are canonicalized for client users. MarshalJSON converts them
+// to the v2 payload shape documented by HetrixTools, including numeric Type
+// values and short monitoring-location codes.
 type UptimeMonitorRequest struct {
-	MID              string   `json:"MID,omitempty"`
-	Type             string   `json:"-"`
-	Name             string   `json:"Name,omitempty"`
-	Target           string   `json:"Target,omitempty"`
-	Port             int64    `json:"Port,omitempty"`
-	HTTPMethod       string   `json:"Method,omitempty"`
-	MaxRedirects     int64    `json:"MaxRedirects,omitempty"`
-	SMTPUser         string   `json:"SMTPUser,omitempty"`
-	SMTPPass         string   `json:"SMTPPass,omitempty"`
-	Timeout          int64    `json:"Timeout,omitempty"`
-	Frequency        int64    `json:"Frequency,omitempty"`
-	FailsBeforeAlert int64    `json:"FailsBeforeAlert,omitempty"`
-	FailedLocations  int64    `json:"FailedLocations,omitempty"`
-	ContactList      string   `json:"ContactList,omitempty"`
-	Category         string   `json:"Category,omitempty"`
-	AlertAfter       string   `json:"AlertAfter,omitempty"`
-	RepeatTimes      int64    `json:"RepeatTimes,omitempty"`
-	RepeatEvery      string   `json:"RepeatEvery,omitempty"`
-	Public           *bool    `json:"Public,omitempty"`
-	ShowTarget       *bool    `json:"ShowTarget,omitempty"`
-	VerSSLCert       *bool    `json:"VerSSLCert,omitempty"`
-	VerSSLHost       *bool    `json:"VerSSLHost,omitempty"`
-	Locations        []string `json:"-"`
-	Keyword          string   `json:"-"`
-	HTTPCodes        []int64  `json:"-"`
-	Grace            int64    `json:"Grace,omitempty"`
-	INFOPub          *bool    `json:"INFOPub,omitempty"`
-	CPUPub           *bool    `json:"CPUPub,omitempty"`
-	RAMPub           *bool    `json:"RAMPub,omitempty"`
-	DISKPub          *bool    `json:"DISKPub,omitempty"`
-	NETPub           *bool    `json:"NETPub,omitempty"`
+	// MID is the existing uptime monitor ID for update requests. Leave empty for create requests.
+	MID string `json:"MID,omitempty"`
+	// Type is the canonical monitor type: http, ping, smtp, or heartbeat.
+	Type string `json:"-"`
+	// Name is the human-readable monitor name.
+	Name string `json:"Name,omitempty"`
+	// Target is the URL, host, IP, or SMTP hostname checked by non-heartbeat monitors.
+	Target string `json:"Target,omitempty"`
+	// Port is the SMTP port and is only valid for smtp monitors.
+	Port int64 `json:"Port,omitempty"`
+	// HTTPMethod is the HTTP method and is only valid for http monitors.
+	HTTPMethod string `json:"Method,omitempty"`
+	// MaxRedirects is the maximum redirects to follow and is only valid for http monitors.
+	MaxRedirects int64 `json:"MaxRedirects,omitempty"`
+	// SMTPUser is the optional SMTP username and is only valid for smtp monitors.
+	SMTPUser string `json:"SMTPUser,omitempty"`
+	// SMTPPass is the optional SMTP password and is only valid for smtp monitors.
+	SMTPPass string `json:"SMTPPass,omitempty"`
+	// Timeout is the check timeout in seconds.
+	Timeout int64 `json:"Timeout,omitempty"`
+	// Frequency is the check frequency in minutes.
+	Frequency int64 `json:"Frequency,omitempty"`
+	// FailsBeforeAlert is the number of failed checks required before alerting.
+	FailsBeforeAlert int64 `json:"FailsBeforeAlert,omitempty"`
+	// FailedLocations is the number of failed locations required before alerting.
+	FailedLocations int64 `json:"FailedLocations,omitempty"`
+	// ContactList is the HetrixTools contact list ID used for notifications.
+	ContactList string `json:"ContactList,omitempty"`
+	// Category is the HetrixTools monitor category.
+	Category string `json:"Category,omitempty"`
+	// AlertAfter is the delay before sending an alert, such as 5m.
+	AlertAfter string `json:"AlertAfter,omitempty"`
+	// RepeatTimes is the number of times to repeat alerts.
+	RepeatTimes int64 `json:"RepeatTimes,omitempty"`
+	// RepeatEvery is the alert repeat interval, such as 60m.
+	RepeatEvery string `json:"RepeatEvery,omitempty"`
+	// Public controls whether the monitor has a public report.
+	Public *bool `json:"Public,omitempty"`
+	// ShowTarget controls whether the monitor target is shown publicly.
+	ShowTarget *bool `json:"ShowTarget,omitempty"`
+	// VerSSLCert controls SSL certificate validation for http and smtp monitors.
+	VerSSLCert *bool `json:"VerSSLCert,omitempty"`
+	// VerSSLHost controls SSL hostname validation for http and smtp monitors.
+	VerSSLHost *bool `json:"VerSSLHost,omitempty"`
+	// Locations is the set of canonical monitoring location names enabled for the monitor.
+	Locations []string `json:"-"`
+	// Keyword is the expected response-body keyword and is only valid for http monitors.
+	Keyword string `json:"-"`
+	// HTTPCodes is the set of accepted HTTP status codes and is only valid for http monitors.
+	HTTPCodes []int64 `json:"-"`
+	// Grace is the heartbeat grace period and is only valid for heartbeat monitors.
+	Grace int64 `json:"Grace,omitempty"`
+	// INFOPub controls whether heartbeat info details are public.
+	INFOPub *bool `json:"INFOPub,omitempty"`
+	// CPUPub controls whether heartbeat CPU details are public.
+	CPUPub *bool `json:"CPUPub,omitempty"`
+	// RAMPub controls whether heartbeat RAM details are public.
+	RAMPub *bool `json:"RAMPub,omitempty"`
+	// DISKPub controls whether heartbeat disk details are public.
+	DISKPub *bool `json:"DISKPub,omitempty"`
+	// NETPub controls whether heartbeat network details are public.
+	NETPub *bool `json:"NETPub,omitempty"`
 }
 
-// MarshalJSON translates the canonical client model into the v2 add/update API shape.
+// MarshalJSON translates the canonical client model into the v2 add/update API
+// shape documented by HetrixTools:
+//
+//   - https://docs.hetrixtools.com/api-add-website-ping-service-smtp-uptime-monitor/
+//   - https://docs.hetrixtools.com/api-add-server-agent-uptime-monitor-heartbeat-uptime-monitor/
 func (r UptimeMonitorRequest) MarshalJSON() ([]byte, error) {
 	if err := r.Validate(); err != nil {
 		return nil, err
@@ -199,7 +289,8 @@ func (r UptimeMonitorRequest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(payload)
 }
 
-// Validate rejects combinations the HetrixTools uptime API cannot represent.
+// Validate rejects combinations the documented HetrixTools v2 uptime APIs cannot
+// represent.
 func (r UptimeMonitorRequest) Validate() error {
 	monitorType := r.Type
 	if monitorType == "" {
@@ -274,37 +365,68 @@ func (r UptimeMonitorRequest) Validate() error {
 
 // UptimeMonitor describes a HetrixTools uptime monitor.
 type UptimeMonitor struct {
-	ID               string   `json:"id"`
-	Type             string   `json:"-"`
-	Name             string   `json:"name"`
-	Target           string   `json:"target"`
-	Port             *int64   `json:"port"`
-	HTTPMethod       string   `json:"http_method"`
-	MaxRedirects     int64    `json:"max_redirects"`
-	SMTPUser         string   `json:"smtp_user"`
-	Timeout          int64    `json:"timeout"`
-	Frequency        int64    `json:"frequency"`
-	FailsBeforeAlert int64    `json:"fails_before_alert"`
-	FailedLocations  int64    `json:"failed_locations"`
-	ContactListID    string   `json:"contact_list_id"`
-	Category         string   `json:"category"`
-	AlertAfter       string   `json:"alert_after"`
-	RepeatTimes      int64    `json:"repeat_times"`
-	RepeatEvery      string   `json:"repeat_every"`
-	Public           *bool    `json:"public"`
-	ShowTarget       *bool    `json:"show_target"`
-	VerSSLCert       *bool    `json:"verify_ssl_certificate"`
-	VerSSLHost       *bool    `json:"verify_ssl_host"`
-	Locations        []string `json:"-"`
-	Keyword          string   `json:"keyword"`
-	HTTPCodes        []int64  `json:"accepted_http_codes"`
-	Grace            int64    `json:"grace"`
-	InfoPublic       *bool    `json:"info_public"`
-	CPUPublic        *bool    `json:"cpu_public"`
-	RAMPublic        *bool    `json:"ram_public"`
-	DiskPublic       *bool    `json:"disk_public"`
-	NetPublic        *bool    `json:"net_public"`
-	ServerID         *string  `json:"server_id"`
+	// ID is the HetrixTools uptime monitor ID.
+	ID string `json:"id"`
+	// Type is the canonical monitor type: http, ping, smtp, or heartbeat.
+	Type string `json:"-"`
+	// Name is the human-readable monitor name.
+	Name string `json:"name"`
+	// Target is the URL, host, IP, or SMTP hostname checked by non-heartbeat monitors.
+	Target string `json:"target"`
+	// Port is the SMTP port. It is nil for non-SMTP monitors.
+	Port *int64 `json:"port"`
+	// HTTPMethod is the HTTP method for http monitors.
+	HTTPMethod string `json:"http_method"`
+	// MaxRedirects is the maximum redirects followed by http monitors.
+	MaxRedirects int64 `json:"max_redirects"`
+	// SMTPUser is the SMTP username returned by the API for smtp monitors.
+	SMTPUser string `json:"smtp_user"`
+	// Timeout is the check timeout in seconds.
+	Timeout int64 `json:"timeout"`
+	// Frequency is the check frequency in minutes.
+	Frequency int64 `json:"frequency"`
+	// FailsBeforeAlert is the number of failed checks required before alerting.
+	FailsBeforeAlert int64 `json:"fails_before_alert"`
+	// FailedLocations is the number of failed locations required before alerting.
+	FailedLocations int64 `json:"failed_locations"`
+	// ContactListID is the contact list ID used for notifications.
+	ContactListID string `json:"contact_list_id"`
+	// Category is the HetrixTools monitor category.
+	Category string `json:"category"`
+	// AlertAfter is the delay before sending an alert, such as 5m.
+	AlertAfter string `json:"alert_after"`
+	// RepeatTimes is the number of times to repeat alerts.
+	RepeatTimes int64 `json:"repeat_times"`
+	// RepeatEvery is the alert repeat interval, such as 60m.
+	RepeatEvery string `json:"repeat_every"`
+	// Public reports whether the monitor has a public report.
+	Public *bool `json:"public"`
+	// ShowTarget reports whether the monitor target is shown publicly.
+	ShowTarget *bool `json:"show_target"`
+	// VerSSLCert reports whether SSL certificate validation is enabled.
+	VerSSLCert *bool `json:"verify_ssl_certificate"`
+	// VerSSLHost reports whether SSL hostname validation is enabled.
+	VerSSLHost *bool `json:"verify_ssl_host"`
+	// Locations contains canonical monitoring location names enabled for the monitor.
+	Locations []string `json:"-"`
+	// Keyword is the expected response-body keyword for http monitors.
+	Keyword string `json:"keyword"`
+	// HTTPCodes contains accepted HTTP status codes for http monitors.
+	HTTPCodes []int64 `json:"accepted_http_codes"`
+	// Grace is the heartbeat grace period for heartbeat monitors.
+	Grace int64 `json:"grace"`
+	// InfoPublic reports whether heartbeat info details are public.
+	InfoPublic *bool `json:"info_public"`
+	// CPUPublic reports whether heartbeat CPU details are public.
+	CPUPublic *bool `json:"cpu_public"`
+	// RAMPublic reports whether heartbeat RAM details are public.
+	RAMPublic *bool `json:"ram_public"`
+	// DiskPublic reports whether heartbeat disk details are public.
+	DiskPublic *bool `json:"disk_public"`
+	// NetPublic reports whether heartbeat network details are public.
+	NetPublic *bool `json:"net_public"`
+	// ServerID is the attached server-agent ID. It is nil for non-heartbeat monitors.
+	ServerID *string `json:"server_id"`
 }
 
 // UnmarshalJSON accepts both v3 snake_case fields and legacy v2 camel-case names.
@@ -643,8 +765,10 @@ func uptimeMonitorTypeID(name string) (int64, error) {
 
 // UptimeMonitorsResponse is returned by ListUptimeMonitors.
 type UptimeMonitorsResponse struct {
+	// UptimeMonitors contains the returned uptime monitors.
 	UptimeMonitors []UptimeMonitor `json:"uptime_monitors"`
-	Meta           Meta            `json:"meta"`
+	// Meta contains pagination and result-count metadata.
+	Meta Meta `json:"meta"`
 }
 
 // UnmarshalJSON accepts documented and legacy list envelope names.
@@ -667,49 +791,74 @@ func (r *UptimeMonitorsResponse) UnmarshalJSON(body []byte) error {
 
 // ScheduledMaintenanceRequest describes a scheduled maintenance create request.
 type ScheduledMaintenanceRequest struct {
-	MonitorID         string `json:"monitor_id"`
-	Start             string `json:"start"`
-	End               string `json:"end"`
-	Timezone          string `json:"timezone"`
-	WithNotifications bool   `json:"with_notifications"`
-	RecurringTime     int64  `json:"recurring_time"`
+	// MonitorID is the uptime monitor ID that will be under maintenance.
+	MonitorID string `json:"monitor_id"`
+	// Start is the maintenance start timestamp in HetrixTools format.
+	Start string `json:"start"`
+	// End is the maintenance end timestamp in HetrixTools format.
+	End string `json:"end"`
+	// Timezone is the timezone used by Start and End.
+	Timezone string `json:"timezone"`
+	// WithNotifications controls whether HetrixTools sends maintenance notifications.
+	WithNotifications bool `json:"with_notifications"`
+	// RecurringTime is the recurrence interval value when recurrence is enabled.
+	RecurringTime int64 `json:"recurring_time"`
+	// RecurringTimeType is the recurrence unit used with RecurringTime.
 	RecurringTimeType string `json:"recurring_time_type"`
 }
 
 // ScheduledMaintenance describes a HetrixTools scheduled maintenance window.
 type ScheduledMaintenance struct {
-	ID                string `json:"id"`
-	MonitorID         string `json:"monitor_id"`
-	Start             string `json:"start"`
-	End               string `json:"end"`
-	Timezone          string `json:"timezone"`
-	WithNotifications bool   `json:"with_notifications"`
-	Recurring         bool   `json:"recurring"`
-	RecurringTime     int64  `json:"recurring_time"`
+	// ID is the scheduled maintenance ID.
+	ID string `json:"id"`
+	// MonitorID is the uptime monitor ID covered by the maintenance window.
+	MonitorID string `json:"monitor_id"`
+	// Start is the maintenance start timestamp returned by HetrixTools.
+	Start string `json:"start"`
+	// End is the maintenance end timestamp returned by HetrixTools.
+	End string `json:"end"`
+	// Timezone is the timezone used by Start and End.
+	Timezone string `json:"timezone"`
+	// WithNotifications reports whether notifications are enabled for the window.
+	WithNotifications bool `json:"with_notifications"`
+	// Recurring reports whether the maintenance window recurs.
+	Recurring bool `json:"recurring"`
+	// RecurringTime is the recurrence interval value.
+	RecurringTime int64 `json:"recurring_time"`
+	// RecurringTimeType is the recurrence unit used with RecurringTime.
 	RecurringTimeType string `json:"recurring_time_type"`
 }
 
 // ScheduledMaintenancesResponse is returned by ListScheduledMaintenances.
 type ScheduledMaintenancesResponse struct {
+	// ScheduledMaintenances contains the returned maintenance windows.
 	ScheduledMaintenances []ScheduledMaintenance `json:"scheduled_maintenances"`
-	Meta                  Meta                   `json:"meta"`
+	// Meta contains pagination and result-count metadata.
+	Meta Meta `json:"meta"`
 }
 
 // StatusPage describes a HetrixTools status page.
 type StatusPage struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Type     string   `json:"type"`
+	// ID is the status page ID.
+	ID string `json:"id"`
+	// Name is the status page name.
+	Name string `json:"name"`
+	// Type is the status page type returned by HetrixTools.
+	Type string `json:"type"`
+	// Monitors contains monitor IDs attached to the status page.
 	Monitors []string `json:"monitors"`
 }
 
 // StatusPagesResponse is returned by ListStatusPages.
 type StatusPagesResponse struct {
+	// StatusPages contains the returned status pages.
 	StatusPages []StatusPage `json:"status_pages"`
-	Meta        Meta         `json:"meta"`
+	// Meta contains pagination and result-count metadata.
+	Meta Meta `json:"meta"`
 }
 
 // ServerAgentResponse describes the server agent attached to an uptime monitor.
 type ServerAgentResponse struct {
+	// AgentID is the attached server-agent ID. It is nil when no agent is attached.
 	AgentID *string `json:"agent_id"`
 }

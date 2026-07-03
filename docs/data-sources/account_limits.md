@@ -8,6 +8,8 @@ description: |-
 
 Reads HetrixTools account limits.
 
+The `json` attribute contains the HetrixTools API response. Use Terraform's `jsondecode()` to access individual fields.
+
 ## Example Usage
 
 ```terraform
@@ -18,4 +20,4 @@ data "hetrixtools_account_limits" "current" {}
 
 ### Read-Only
 
-- `json` (String) JSON response from the HetrixTools API.
+- `json` (String) JSON response from the HetrixTools API. Use Terraform's `jsondecode()` to access individual fields.

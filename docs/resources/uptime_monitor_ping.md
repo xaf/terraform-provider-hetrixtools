@@ -8,6 +8,8 @@ description: |-
 
 Manages a HetrixTools ping uptime monitor.
 
+Create, update, delete, and import operations are paced by the shared HetrixTools client to avoid API rate limits. See the client rate-limiting notes and HetrixTools API references in the provider index.
+
 ## Example Usage
 
 ```terraform

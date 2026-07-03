@@ -24,4 +24,4 @@ data "hetrixtools_uptime_server_agent" "example" {
 
 ### Read-Only
 
-- `json` (String) JSON response from the HetrixTools API.
+- `json` (String) JSON response from the HetrixTools API. Use Terraform's `jsondecode()` to access individual fields.
