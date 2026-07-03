@@ -3,6 +3,7 @@ package hetrixtools
 import (
 	"encoding/json"
 	"net/url"
+	"strconv"
 )
 
 // ActionResponse is the common response returned by HetrixTools mutation endpoints.
@@ -72,10 +73,51 @@ type BlacklistMonitor struct {
 	Contact string `json:"contact"`
 }
 
+// UnmarshalJSON accepts alternate field names returned by HetrixTools views.
+func (m *BlacklistMonitor) UnmarshalJSON(body []byte) error {
+	type blacklistMonitor BlacklistMonitor
+	var aux struct {
+		blacklistMonitor
+		TargetIP     string   `json:"ip"`
+		TargetDomain string   `json:"domain"`
+		TargetHost   string   `json:"host"`
+		Contacts     []string `json:"contact_lists"`
+	}
+	if err := json.Unmarshal(body, &aux); err != nil {
+		return err
+	}
+	*m = BlacklistMonitor(aux.blacklistMonitor)
+	if m.Target == "" {
+		m.Target = firstNonEmpty(aux.TargetIP, aux.TargetDomain, aux.TargetHost)
+	}
+	if m.Contact == "" && len(aux.Contacts) > 0 {
+		m.Contact = aux.Contacts[0]
+	}
+	return nil
+}
+
 // BlacklistMonitorsResponse is returned by ListBlacklistMonitors.
 type BlacklistMonitorsResponse struct {
 	BlacklistMonitors []BlacklistMonitor `json:"blacklist_monitors"`
 	Meta              Meta               `json:"meta"`
+}
+
+// UnmarshalJSON accepts documented and legacy list envelope names.
+func (r *BlacklistMonitorsResponse) UnmarshalJSON(body []byte) error {
+	type blacklistMonitorsResponse BlacklistMonitorsResponse
+	var aux struct {
+		blacklistMonitorsResponse
+		Monitors []BlacklistMonitor `json:"monitors"`
+		Data     []BlacklistMonitor `json:"data"`
+	}
+	if err := json.Unmarshal(body, &aux); err != nil {
+		return err
+	}
+	*r = BlacklistMonitorsResponse(aux.blacklistMonitorsResponse)
+	if len(r.BlacklistMonitors) == 0 {
+		r.BlacklistMonitors = firstNonEmptySlice(aux.Monitors, aux.Data)
+	}
+	return nil
 }
 
 func (r BlacklistMonitorRequest) form() url.Values {
@@ -154,6 +196,21 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	type uptimeMonitor UptimeMonitor
 	var aux struct {
 		uptimeMonitor
+		IDMonitorID           string          `json:"monitor_id"`
+		IDMID                 string          `json:"MID"`
+		IDCamel               string          `json:"MonitorID"`
+		TypeRaw               json.RawMessage `json:"type"`
+		FrequencyV3           int64           `json:"check_frequency"`
+		ContactLists          []string        `json:"contact_lists"`
+		FailsBeforeAlertV3    int64           `json:"number_of_tries"`
+		FailedLocationsV3     int64           `json:"triggering_locations"`
+		AlertAfterMinutes     int64           `json:"alert_after_minutes"`
+		RepeatTimesV3         int64           `json:"repeat_alert_times"`
+		RepeatEveryV3         int64           `json:"repeat_alert_frequency"`
+		PublicV3              *bool           `json:"public_report"`
+		ShowTargetV3          *bool           `json:"public_target"`
+		VerSSLHostV3          *bool           `json:"verify_ssl_hostname"`
+		LocationsV3           map[string]any  `json:"locations"`
 		ContactListCamel      string          `json:"ContactList"`
 		FailsBeforeAlertCamel int64           `json:"FailsBeforeAlert"`
 		FailedLocationsCamel  int64           `json:"FailedLocations"`
@@ -174,23 +231,42 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		return err
 	}
 	*m = UptimeMonitor(aux.uptimeMonitor)
+	if m.ID == "" {
+		m.ID = firstNonEmpty(aux.IDMonitorID, aux.IDMID, aux.IDCamel)
+	}
+	if m.Type == 0 {
+		m.Type = monitorTypeID(aux.TypeRaw)
+	}
+	if m.Frequency == 0 {
+		m.Frequency = aux.FrequencyV3
+	}
 	if m.ContactListID == "" {
-		m.ContactListID = aux.ContactListCamel
+		if len(aux.ContactLists) > 0 {
+			m.ContactListID = aux.ContactLists[0]
+		} else {
+			m.ContactListID = aux.ContactListCamel
+		}
 	}
 	if m.FailsBeforeAlert == 0 {
-		m.FailsBeforeAlert = aux.FailsBeforeAlertCamel
+		m.FailsBeforeAlert = firstNonZeroInt64(aux.FailsBeforeAlertV3, aux.FailsBeforeAlertCamel)
 	}
 	if m.FailedLocations == 0 {
-		m.FailedLocations = aux.FailedLocationsCamel
+		m.FailedLocations = firstNonZeroInt64(aux.FailedLocationsV3, aux.FailedLocationsCamel)
 	}
 	if m.AlertAfter == "" {
-		m.AlertAfter = aux.AlertAfterCamel
+		m.AlertAfter = firstNonEmpty(durationMinutes(aux.AlertAfterMinutes), aux.AlertAfterCamel)
 	}
 	if m.RepeatTimes == 0 {
-		m.RepeatTimes = aux.RepeatTimesCamel
+		m.RepeatTimes = firstNonZeroInt64(aux.RepeatTimesV3, aux.RepeatTimesCamel)
 	}
 	if m.RepeatEvery == "" {
-		m.RepeatEvery = aux.RepeatEveryCamel
+		m.RepeatEvery = firstNonEmpty(durationMinutes(aux.RepeatEveryV3), aux.RepeatEveryCamel)
+	}
+	if m.Public == nil {
+		m.Public = aux.PublicV3
+	}
+	if m.ShowTarget == nil {
+		m.ShowTarget = aux.ShowTargetV3
 	}
 	if m.ShowTarget == nil {
 		m.ShowTarget = aux.ShowTargetCamel
@@ -199,10 +275,17 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		m.VerSSLCert = aux.VerSSLCertCamel
 	}
 	if m.VerSSLHost == nil {
-		m.VerSSLHost = aux.VerSSLHostCamel
+		m.VerSSLHost = firstNonNilBool(aux.VerSSLHostV3, aux.VerSSLHostCamel)
 	}
 	if m.Locations == nil {
-		m.Locations = aux.LocationsCamel
+		if len(aux.LocationsV3) > 0 {
+			m.Locations = map[string]bool{}
+			for key := range aux.LocationsV3 {
+				m.Locations[key] = true
+			}
+		} else {
+			m.Locations = aux.LocationsCamel
+		}
 	}
 	if m.InfoPublic == nil {
 		m.InfoPublic = aux.InfoPublicCamel
@@ -222,10 +305,94 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstNonEmptySlice[T any](values ...[]T) []T {
+	for _, value := range values {
+		if len(value) > 0 {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstNonZeroInt64(values ...int64) int64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonNilBool(values ...*bool) *bool {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func durationMinutes(minutes int64) string {
+	if minutes == 0 {
+		return ""
+	}
+	return strconv.FormatInt(minutes, 10) + "m"
+}
+
+func monitorTypeID(raw json.RawMessage) int64 {
+	var id int64
+	if err := json.Unmarshal(raw, &id); err == nil {
+		return id
+	}
+	var name string
+	if err := json.Unmarshal(raw, &name); err != nil {
+		return 0
+	}
+	switch name {
+	case "website":
+		return 1
+	case "ping", "service":
+		return 2
+	case "smtp":
+		return 3
+	case "server", "server_agent":
+		return 9
+	default:
+		return 0
+	}
+}
+
 // UptimeMonitorsResponse is returned by ListUptimeMonitors.
 type UptimeMonitorsResponse struct {
 	UptimeMonitors []UptimeMonitor `json:"uptime_monitors"`
 	Meta           Meta            `json:"meta"`
+}
+
+// UnmarshalJSON accepts documented and legacy list envelope names.
+func (r *UptimeMonitorsResponse) UnmarshalJSON(body []byte) error {
+	type uptimeMonitorsResponse UptimeMonitorsResponse
+	var aux struct {
+		uptimeMonitorsResponse
+		Monitors []UptimeMonitor `json:"monitors"`
+		Data     []UptimeMonitor `json:"data"`
+	}
+	if err := json.Unmarshal(body, &aux); err != nil {
+		return err
+	}
+	*r = UptimeMonitorsResponse(aux.uptimeMonitorsResponse)
+	if len(r.UptimeMonitors) == 0 {
+		r.UptimeMonitors = firstNonEmptySlice(aux.Monitors, aux.Data)
+	}
+	return nil
 }
 
 // ScheduledMaintenanceRequest describes a scheduled maintenance create request.

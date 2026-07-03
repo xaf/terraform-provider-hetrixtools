@@ -596,6 +596,86 @@ func TestUptimeMonitorUnmarshalAcceptsLegacyCamelCaseFields(t *testing.T) {
 	}
 }
 
+func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
+	t.Parallel()
+
+	var response UptimeMonitorsResponse
+	body := []byte(`{
+		"monitors":[{
+			"id":"up-1",
+			"name":"Homepage",
+			"type":"website",
+			"target":"https://example.com",
+			"timeout":10,
+			"check_frequency":1,
+			"contact_lists":["contacts-1"],
+			"locations":{"new_york":{"uptime_status":"up"}},
+			"public_report":false,
+			"public_target":false,
+			"verify_ssl_certificate":true,
+			"verify_ssl_hostname":true,
+			"number_of_tries":3,
+			"triggering_locations":2,
+			"alert_after_minutes":5,
+			"repeat_alert_times":1,
+			"repeat_alert_frequency":60
+		}]
+	}`)
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("unmarshal uptime monitors response: %s", err)
+	}
+
+	if got, want := len(response.UptimeMonitors), 1; got != want {
+		t.Fatalf("uptime monitors length = %d, want %d", got, want)
+	}
+	monitor := response.UptimeMonitors[0]
+	if got, want := monitor.Type, int64(1); got != want {
+		t.Fatalf("type = %d, want %d", got, want)
+	}
+	if got, want := monitor.Frequency, int64(1); got != want {
+		t.Fatalf("frequency = %d, want %d", got, want)
+	}
+	if got, want := monitor.ContactListID, "contacts-1"; got != want {
+		t.Fatalf("contact list = %q, want %q", got, want)
+	}
+	if got, want := monitor.AlertAfter, "5m"; got != want {
+		t.Fatalf("alert after = %q, want %q", got, want)
+	}
+	if got, want := monitor.RepeatEvery, "60m"; got != want {
+		t.Fatalf("repeat every = %q, want %q", got, want)
+	}
+	if !monitor.Locations["new_york"] {
+		t.Fatalf("new_york location missing or false: %#v", monitor.Locations)
+	}
+}
+
+func TestBlacklistMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
+	t.Parallel()
+
+	var response BlacklistMonitorsResponse
+	body := []byte(`{
+		"monitors":[{
+			"id":"blacklist-1",
+			"target":"example.com",
+			"contact_lists":["contacts-1"]
+		}]
+	}`)
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("unmarshal blacklist monitors response: %s", err)
+	}
+
+	if got, want := len(response.BlacklistMonitors), 1; got != want {
+		t.Fatalf("blacklist monitors length = %d, want %d", got, want)
+	}
+	monitor := response.BlacklistMonitors[0]
+	if got, want := monitor.Target, "example.com"; got != want {
+		t.Fatalf("target = %q, want %q", got, want)
+	}
+	if got, want := monitor.Contact, "contacts-1"; got != want {
+		t.Fatalf("contact = %q, want %q", got, want)
+	}
+}
+
 func writePage(w http.ResponseWriter, name string, page string, first string, second string) {
 	w.Header().Set("Content-Type", "application/json")
 	if page == "" || page == "1" {
