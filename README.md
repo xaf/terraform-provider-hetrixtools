@@ -143,6 +143,12 @@ Release checklist:
 3. Export signing env vars: `GPG_FINGERPRINT` and `GPG_PASSPHRASE`.
 4. Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 5. Verify the GitHub release contains provider zip files, the `SHA256SUMS` file, and its detached signature.
+6. The GitHub release workflow refreshes the Go module proxy and pkg.go.dev client docs after GoReleaser publishes the tag. If indexing lags, rerun manually:
+
+```bash
+GOPROXY=https://proxy.golang.org go list -m github.com/xaf/terraform-provider-hetrixtools@vX.Y.Z
+curl -fsS "https://pkg.go.dev/fetch/github.com/xaf/terraform-provider-hetrixtools/client@vX.Y.Z"
+```
 
 Provider zip files are named like:
 
@@ -152,7 +158,7 @@ terraform-provider-hetrixtools_X.Y.Z_linux_amd64.zip
 
 These assets are consumed by the Terraform infrastructure workspace cache script.
 
-After GoReleaser completes, the release config also triggers Go module proxy and pkg.go.dev fetches for the root client module so the new client documentation appears sooner on pkg.go.dev. Those fetches are best-effort and do not fail the release if pkg.go.dev indexing lags.
+The Go module proxy and pkg.go.dev refresh runs as a best-effort GitHub Actions step after GoReleaser, not as a GoReleaser hook, so a temporary indexing failure cannot break provider publishing.
 
 ## License
 
