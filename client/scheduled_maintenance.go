@@ -37,7 +37,9 @@ func (c *Client) ListScheduledMaintenances(ctx context.Context, query map[string
 	return &response, nil
 }
 
-// GetScheduledMaintenance finds a scheduled maintenance window by ID.
+// GetScheduledMaintenance finds a scheduled maintenance window by ID using
+// ListScheduledMaintenances; see ListScheduledMaintenances for the source API
+// reference.
 func (c *Client) GetScheduledMaintenance(ctx context.Context, id string, monitorID string) (*ScheduledMaintenance, error) {
 	for page := 1; ; page++ {
 		query := map[string]string{"page": fmt.Sprint(page), "per_page": "200"}

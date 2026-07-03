@@ -35,7 +35,9 @@ func (c *Client) UpdateUptimeMonitor(ctx context.Context, request UptimeMonitorR
 	return decodeActionResponse(body)
 }
 
-// UpsertUptimeMonitor updates an uptime monitor when MID is set, otherwise it creates one.
+// UpsertUptimeMonitor updates an uptime monitor when MID is set, otherwise it
+// creates one. It calls CreateUptimeMonitor or UpdateUptimeMonitor; see those
+// methods for source API references.
 func (c *Client) UpsertUptimeMonitor(ctx context.Context, request UptimeMonitorRequest) (*ActionResponse, error) {
 	if request.MID == "" {
 		return c.CreateUptimeMonitor(ctx, request)
@@ -67,7 +69,8 @@ func (c *Client) ListUptimeMonitors(ctx context.Context, query map[string]string
 	return &response, nil
 }
 
-// GetUptimeMonitor finds an uptime monitor by monitor ID.
+// GetUptimeMonitor finds an uptime monitor by monitor ID using
+// ListUptimeMonitors; see ListUptimeMonitors for the source API reference.
 func (c *Client) GetUptimeMonitor(ctx context.Context, monitorID string) (*UptimeMonitor, error) {
 	if monitorID == "" {
 		return nil, nil

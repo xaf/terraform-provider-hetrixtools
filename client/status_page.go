@@ -17,7 +17,8 @@ func (c *Client) ListStatusPages(ctx context.Context, query map[string]string) (
 	return &response, nil
 }
 
-// GetStatusPage finds a status page by ID.
+// GetStatusPage finds a status page by ID using ListStatusPages; see
+// ListStatusPages for the source API reference.
 func (c *Client) GetStatusPage(ctx context.Context, id string) (*StatusPage, error) {
 	for page := 1; ; page++ {
 		response, err := c.ListStatusPages(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100"})

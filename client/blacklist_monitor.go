@@ -34,7 +34,9 @@ func (c *Client) UpdateBlacklistMonitor(ctx context.Context, request BlacklistMo
 	return decodeActionResponse(body)
 }
 
-// UpsertBlacklistMonitor updates an existing blacklist monitor by target or creates it when absent.
+// UpsertBlacklistMonitor updates an existing blacklist monitor by target or
+// creates it when absent. It calls GetBlacklistMonitor, CreateBlacklistMonitor,
+// and UpdateBlacklistMonitor; see those methods for source API references.
 func (c *Client) UpsertBlacklistMonitor(ctx context.Context, request BlacklistMonitorRequest) (*ActionResponse, error) {
 	existing, err := c.GetBlacklistMonitor(ctx, request.Target)
 	if err != nil {
@@ -70,7 +72,8 @@ func (c *Client) ListBlacklistMonitors(ctx context.Context, query map[string]str
 	return &response, nil
 }
 
-// GetBlacklistMonitor finds a blacklist monitor by exact target.
+// GetBlacklistMonitor finds a blacklist monitor by exact target using
+// ListBlacklistMonitors; see ListBlacklistMonitors for the source API reference.
 func (c *Client) GetBlacklistMonitor(ctx context.Context, target string) (*BlacklistMonitor, error) {
 	monitors, err := c.cachedBlacklistMonitors(ctx)
 	if err != nil {
