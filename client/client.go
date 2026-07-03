@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,10 +26,31 @@ const (
 
 // Client calls HetrixTools APIs through semantic resource methods.
 type Client struct {
-	v3BaseURL string
-	v2BaseURL string
-	token     string
-	http      *http.Client
+	v3BaseURL      string
+	v2BaseURL      string
+	token          string
+	http           *http.Client
+	v2Interval     time.Duration
+	v3Interval     time.Duration
+	v2Limiter      *rateLimiter
+	v3UserLimiter  *rateLimiter
+	limiterMu      sync.Mutex
+	v3Limiters     map[string]*rateLimiter
+	cacheMu        sync.Mutex
+	uptimeMonitors []UptimeMonitor
+	blMonitors     []BlacklistMonitor
+}
+
+type rateLimiter struct {
+	mu           sync.Mutex
+	lastRequest  time.Time
+	blockedUntil time.Time
+}
+
+type requestLimiter struct {
+	limiter  *rateLimiter
+	interval time.Duration
+	scope    string
 }
 
 type Option func(*Client)
@@ -37,6 +60,34 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	return func(c *Client) {
 		if httpClient != nil {
 			c.http = httpClient
+		}
+	}
+}
+
+// WithMinimumRequestInterval configures client-side pacing between API calls.
+func WithMinimumRequestInterval(interval time.Duration) Option {
+	return func(c *Client) {
+		if interval >= 0 {
+			c.v2Interval = interval
+			c.v3Interval = interval
+		}
+	}
+}
+
+// WithV2RequestInterval configures pacing for v1/v2 token-path API calls.
+func WithV2RequestInterval(interval time.Duration) Option {
+	return func(c *Client) {
+		if interval >= 0 {
+			c.v2Interval = interval
+		}
+	}
+}
+
+// WithV3RequestInterval configures per-endpoint pacing for v3 REST API calls.
+func WithV3RequestInterval(interval time.Duration) Option {
+	return func(c *Client) {
+		if interval >= 0 {
+			c.v3Interval = interval
 		}
 	}
 }
@@ -74,6 +125,14 @@ func NewClientWithBaseURL(baseURL string, token string, options ...Option) *Clie
 		v2BaseURL: v2BaseURL,
 		token:     token,
 		http:      &http.Client{Timeout: 30 * time.Second},
+		// HetrixTools v1/v2 allows 120 requests/minute across all v1/v2
+		// endpoints. v3 is limited per user and per API call, so the client uses
+		// a separate limiter per v3 method/path while still honoring 429 retries.
+		v2Interval:    500 * time.Millisecond,
+		v3Interval:    500 * time.Millisecond,
+		v2Limiter:     &rateLimiter{},
+		v3UserLimiter: &rateLimiter{},
+		v3Limiters:    map[string]*rateLimiter{},
 	}
 	for _, option := range options {
 		option(c)
@@ -124,15 +183,18 @@ func (c *Client) getEndpoint(ctx context.Context, path string, query map[string]
 }
 
 func (c *Client) doV3(ctx context.Context, method string, path string, query map[string]string, body any) ([]byte, error) {
-	return c.do(ctx, c.v3BaseURL, method, path, query, body, true)
+	return c.do(ctx, c.v3BaseURL, method, path, query, body, true, []requestLimiter{
+		{limiter: c.v3UserLimiter, interval: c.v3Interval, scope: "user"},
+		{limiter: c.v3EndpointLimiter(method, path), interval: c.v3Interval, scope: "endpoint"},
+	})
 }
 
 func (c *Client) doV2JSON(ctx context.Context, method string, path string, body any) ([]byte, error) {
-	return c.do(ctx, c.v2BaseURL, method, c.v2Path(path), nil, body, false)
+	return c.do(ctx, c.v2BaseURL, method, c.v2Path(path), nil, body, false, []requestLimiter{{limiter: c.v2Limiter, interval: c.v2Interval}})
 }
 
 func (c *Client) doV2Form(ctx context.Context, path string, values url.Values) ([]byte, error) {
-	return c.doForm(ctx, c.v2BaseURL, c.v2Path(path), values)
+	return c.doForm(ctx, c.v2BaseURL, c.v2Path(path), values, []requestLimiter{{limiter: c.v2Limiter, interval: c.v2Interval}})
 }
 
 func decodeActionResponse(body []byte) (*ActionResponse, error) {
@@ -146,7 +208,7 @@ func decodeActionResponse(body []byte) (*ActionResponse, error) {
 	return &result, nil
 }
 
-func (c *Client) do(ctx context.Context, baseURL string, method string, path string, query map[string]string, body any, bearerAuth bool) ([]byte, error) {
+func (c *Client) do(ctx context.Context, baseURL string, method string, path string, query map[string]string, body any, bearerAuth bool, limiters []requestLimiter) ([]byte, error) {
 	requestURL, err := requestURL(baseURL, path, query)
 	if err != nil {
 		return nil, err
@@ -173,10 +235,10 @@ func (c *Client) do(ctx context.Context, baseURL string, method string, path str
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	return c.doRequest(req)
+	return c.doRequest(req, limiters)
 }
 
-func (c *Client) doForm(ctx context.Context, baseURL string, path string, values url.Values) ([]byte, error) {
+func (c *Client) doForm(ctx context.Context, baseURL string, path string, values url.Values, limiters []requestLimiter) ([]byte, error) {
 	requestURL, err := requestURL(baseURL, path, nil)
 	if err != nil {
 		return nil, err
@@ -187,26 +249,213 @@ func (c *Client) doForm(ctx context.Context, baseURL string, path string, values
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c.doRequest(req)
+	return c.doRequest(req, limiters)
 }
 
-func (c *Client) doRequest(req *http.Request) ([]byte, error) {
-	resp, err := c.http.Do(req)
+func (c *Client) doRequest(req *http.Request, limiters []requestLimiter) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		attemptReq := req.Clone(req.Context())
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			attemptReq.Body = body
+		}
+
+		for _, limiter := range limiters {
+			if err := waitForRequestSlot(attemptReq.Context(), limiter); err != nil {
+				return nil, err
+			}
+		}
+
+		resp, err := c.http.Do(attemptReq)
+		if err != nil {
+			lastErr = err
+			if attempt == 5 {
+				return nil, err
+			}
+			if err := sleepContext(attemptReq.Context(), retryDelay(nil, attempt)); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		responseBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		updateRateLimits(resp.Header, limiters)
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < 5 {
+			lastErr = Error{StatusCode: resp.StatusCode, Body: string(responseBody)}
+			blockRateLimiters(limiters, time.Now().Add(retryDelay(resp, attempt)))
+			continue
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, Error{StatusCode: resp.StatusCode, Body: string(responseBody)}
+		}
+
+		return responseBody, nil
+	}
+	return nil, lastErr
+}
+
+func waitForRequestSlot(ctx context.Context, bucket requestLimiter) error {
+	if bucket.limiter == nil {
+		return nil
+	}
+	bucket.limiter.mu.Lock()
+	defer bucket.limiter.mu.Unlock()
+
+	wait := bucket.interval - time.Since(bucket.limiter.lastRequest)
+	if blockedWait := time.Until(bucket.limiter.blockedUntil); blockedWait > wait {
+		wait = blockedWait
+	}
+	if wait > 0 {
+		if err := sleepContext(ctx, wait); err != nil {
+			return err
+		}
+	}
+	bucket.limiter.lastRequest = time.Now()
+	return nil
+}
+
+func updateRateLimits(headers http.Header, limiters []requestLimiter) {
+	for _, bucket := range limiters {
+		if bucket.scope == "" {
+			continue
+		}
+		remaining, ok := intHeader(headers, "ratelimit-remaining-"+bucket.scope)
+		if !ok || remaining > 0 {
+			continue
+		}
+		reset, ok := resetHeader(headers, "ratelimit-reset-"+bucket.scope)
+		if ok {
+			blockRateLimiter(bucket.limiter, reset)
+		}
+	}
+}
+
+func blockRateLimiters(limiters []requestLimiter, until time.Time) {
+	for _, bucket := range limiters {
+		blockRateLimiter(bucket.limiter, until)
+	}
+}
+
+func blockRateLimiter(limiter *rateLimiter, until time.Time) {
+	if limiter == nil || until.IsZero() {
+		return
+	}
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if until.After(limiter.blockedUntil) {
+		limiter.blockedUntil = until
+	}
+}
+
+func intHeader(headers http.Header, name string) (int, bool) {
+	value := strings.TrimSpace(headers.Get(name))
+	if value == "" {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return nil, err
+		return 0, false
 	}
-	defer resp.Body.Close()
+	return parsed, true
+}
 
-	responseBody, err := io.ReadAll(resp.Body)
+func resetHeader(headers http.Header, name string) (time.Time, bool) {
+	value := strings.TrimSpace(headers.Get(name))
+	if value == "" {
+		return time.Time{}, false
+	}
+	reset, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return nil, err
+		return time.Time{}, false
+	}
+	return time.Unix(reset, 0), true
+}
+
+func (c *Client) v3EndpointLimiter(method string, path string) *rateLimiter {
+	key := method + " " + normalizedEndpointPath(path)
+	c.limiterMu.Lock()
+	defer c.limiterMu.Unlock()
+	limiter, ok := c.v3Limiters[key]
+	if !ok {
+		limiter = &rateLimiter{}
+		c.v3Limiters[key] = limiter
+	}
+	return limiter
+}
+
+func normalizedEndpointPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i, part := range parts {
+		if isLikelyIdentifier(part) {
+			parts[i] = ":id"
+		}
+	}
+	return "/" + strings.Join(parts, "/")
+}
+
+func isLikelyIdentifier(value string) bool {
+	if len(value) < 16 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func retryDelay(resp *http.Response, attempt int) time.Duration {
+	if resp != nil {
+		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
+			if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds >= 0 {
+				return time.Duration(seconds) * time.Second
+			}
+			if retryAt, err := http.ParseTime(retryAfter); err == nil {
+				if wait := time.Until(retryAt); wait > 0 {
+					return wait
+				}
+			}
+		}
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, Error{StatusCode: resp.StatusCode, Body: string(responseBody)}
+	delay := time.Duration(1<<attempt) * time.Second
+	if delay > 30*time.Second {
+		return 30 * time.Second
 	}
+	return delay
+}
 
-	return responseBody, nil
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (c *Client) clearMonitorCaches() {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	c.uptimeMonitors = nil
+	c.blMonitors = nil
 }
 
 func (c *Client) v2Path(path string) string {

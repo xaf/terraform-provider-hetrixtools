@@ -13,6 +13,7 @@ func (c *Client) CreateUptimeMonitor(ctx context.Context, request UptimeMonitorR
 	if err != nil {
 		return nil, err
 	}
+	c.clearMonitorCaches()
 	return decodeActionResponse(body)
 }
 
@@ -22,6 +23,7 @@ func (c *Client) UpdateUptimeMonitor(ctx context.Context, request UptimeMonitorR
 	if err != nil {
 		return nil, err
 	}
+	c.clearMonitorCaches()
 	return decodeActionResponse(body)
 }
 
@@ -36,6 +38,9 @@ func (c *Client) UpsertUptimeMonitor(ctx context.Context, request UptimeMonitorR
 // DeleteUptimeMonitor deletes a HetrixTools uptime monitor by monitor ID.
 func (c *Client) DeleteUptimeMonitor(ctx context.Context, monitorID string) error {
 	_, err := c.doV2JSON(ctx, http.MethodPost, "/uptime/delete/", map[string]string{"MID": monitorID})
+	if err == nil {
+		c.clearMonitorCaches()
+	}
 	return err
 }
 
@@ -53,18 +58,36 @@ func (c *Client) GetUptimeMonitor(ctx context.Context, monitorID string) (*Uptim
 	if monitorID == "" {
 		return nil, nil
 	}
+	monitors, err := c.cachedUptimeMonitors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, monitor := range monitors {
+		if monitor.ID == monitorID {
+			monitor := monitor
+			return &monitor, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *Client) cachedUptimeMonitors(ctx context.Context) ([]UptimeMonitor, error) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.uptimeMonitors != nil {
+		return c.uptimeMonitors, nil
+	}
+
+	var monitors []UptimeMonitor
 	for page := 1; ; page++ {
-		response, err := c.ListUptimeMonitors(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100", "id": monitorID})
+		response, err := c.ListUptimeMonitors(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100"})
 		if err != nil {
 			return nil, err
 		}
-		for _, monitor := range response.UptimeMonitors {
-			if monitor.ID == monitorID {
-				return &monitor, nil
-			}
-		}
+		monitors = append(monitors, response.UptimeMonitors...)
 		if response.Meta.Pagination.Next == nil || page >= response.Meta.Pagination.Last {
-			return nil, nil
+			c.uptimeMonitors = monitors
+			return c.uptimeMonitors, nil
 		}
 	}
 }

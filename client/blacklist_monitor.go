@@ -14,6 +14,7 @@ func (c *Client) CreateBlacklistMonitor(ctx context.Context, request BlacklistMo
 	if err != nil {
 		return nil, err
 	}
+	c.clearMonitorCaches()
 	return decodeActionResponse(body)
 }
 
@@ -23,6 +24,7 @@ func (c *Client) UpdateBlacklistMonitor(ctx context.Context, request BlacklistMo
 	if err != nil {
 		return nil, err
 	}
+	c.clearMonitorCaches()
 	return decodeActionResponse(body)
 }
 
@@ -41,6 +43,9 @@ func (c *Client) UpsertBlacklistMonitor(ctx context.Context, request BlacklistMo
 // DeleteBlacklistMonitor deletes a HetrixTools blacklist monitor by target.
 func (c *Client) DeleteBlacklistMonitor(ctx context.Context, target string) error {
 	_, err := c.doV2Form(ctx, "/blacklist/delete/", url.Values{"target": {target}})
+	if err == nil {
+		c.clearMonitorCaches()
+	}
 	return err
 }
 
@@ -55,18 +60,36 @@ func (c *Client) ListBlacklistMonitors(ctx context.Context, query map[string]str
 
 // GetBlacklistMonitor finds a blacklist monitor by exact target.
 func (c *Client) GetBlacklistMonitor(ctx context.Context, target string) (*BlacklistMonitor, error) {
+	monitors, err := c.cachedBlacklistMonitors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, monitor := range monitors {
+		if monitor.Target == target {
+			monitor := monitor
+			return &monitor, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *Client) cachedBlacklistMonitors(ctx context.Context) ([]BlacklistMonitor, error) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.blMonitors != nil {
+		return c.blMonitors, nil
+	}
+
+	var monitors []BlacklistMonitor
 	for page := 1; ; page++ {
-		response, err := c.ListBlacklistMonitors(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100", "exact_target": target})
+		response, err := c.ListBlacklistMonitors(ctx, map[string]string{"page": fmt.Sprint(page), "per_page": "100"})
 		if err != nil {
 			return nil, err
 		}
-		for _, monitor := range response.BlacklistMonitors {
-			if monitor.Target == target {
-				return &monitor, nil
-			}
-		}
+		monitors = append(monitors, response.BlacklistMonitors...)
 		if response.Meta.Pagination.Next == nil || page >= response.Meta.Pagination.Last {
-			return nil, nil
+			c.blMonitors = monitors
+			return c.blMonitors, nil
 		}
 	}
 }

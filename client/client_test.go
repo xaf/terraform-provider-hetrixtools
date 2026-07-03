@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientBlacklistMonitorActionsUseTokenPathAndFormBody(t *testing.T) {
@@ -432,6 +434,70 @@ func TestClientReturnsErrorAndRejectsAbsoluteEndpointPaths(t *testing.T) {
 	}
 	if _, err := c.getEndpoint(context.Background(), "https://api.example.test/anything", nil); err == nil {
 		t.Fatal("expected absolute endpoint path error")
+	}
+}
+
+func TestClientV3RateLimitHeadersThrottleOnlyMatchingScope(t *testing.T) {
+	var calls []string
+	reset := time.Now().Add(2 * time.Second).Unix()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.URL.Path)
+		if r.URL.Path == "/v3/limited" && len(calls) == 1 {
+			w.Header().Set("ratelimit-remaining-endpoint", "0")
+			w.Header().Set("ratelimit-reset-endpoint", strconv.FormatInt(reset, 10))
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	c := NewClientWithBaseURL(server.URL, "test-token", WithV3RequestInterval(0))
+	if _, err := c.getEndpoint(context.Background(), "/limited", nil); err != nil {
+		t.Fatalf("first limited request returned error: %s", err)
+	}
+
+	otherStart := time.Now()
+	if _, err := c.getEndpoint(context.Background(), "/other", nil); err != nil {
+		t.Fatalf("other request returned error: %s", err)
+	}
+	if elapsed := time.Since(otherStart); elapsed > 500*time.Millisecond {
+		t.Fatalf("unrelated endpoint waited %s, want no endpoint-limit delay", elapsed)
+	}
+
+	limitedStart := time.Now()
+	if _, err := c.getEndpoint(context.Background(), "/limited", nil); err != nil {
+		t.Fatalf("second limited request returned error: %s", err)
+	}
+	if elapsed := time.Since(limitedStart); elapsed < 500*time.Millisecond {
+		t.Fatalf("same endpoint waited %s, want reset delay", elapsed)
+	}
+
+	want := []string{"/v3/limited", "/v3/other", "/v3/limited"}
+	assertStringSlicesEqual(t, calls, want)
+}
+
+func TestClientRetriesTooManyRequestsAfterDelay(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, `{"status":"too_many_requests","message":"user api rate limit exceeded"}`, http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	c := NewClientWithBaseURL(server.URL, "test-token", WithV3RequestInterval(0))
+	start := time.Now()
+	if _, err := c.getEndpoint(context.Background(), "/limited", nil); err != nil {
+		t.Fatalf("request returned error: %s", err)
+	}
+	if elapsed := time.Since(start); elapsed < time.Second {
+		t.Fatalf("retry waited %s, want at least Retry-After delay", elapsed)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
 	}
 }
 
