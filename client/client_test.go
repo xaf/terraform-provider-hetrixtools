@@ -89,8 +89,8 @@ func TestClientUptimeMonitorActionsUseTokenPathAndJSONBody(t *testing.T) {
 			if got, want := body["Name"], "Homepage"; got != want {
 				t.Fatalf("Name = %q, want %q", got, want)
 			}
-			if _, ok := body["extra_option"]; !ok {
-				t.Fatalf("extra_option missing from body %#v", body)
+			if got, want := body["Type"], float64(1); got != want {
+				t.Fatalf("Type = %#v, want %#v", got, want)
 			}
 			_, _ = w.Write([]byte(`{"status":"SUCCESS","monitor_id":"mid-1","server_id":"srv-1"}`))
 		case "/v2/test-token/uptime/delete/":
@@ -109,7 +109,7 @@ func TestClientUptimeMonitorActionsUseTokenPathAndJSONBody(t *testing.T) {
 	defer server.Close()
 
 	c := NewClientWithBaseURL(server.URL+"/v3", "test-token")
-	request := UptimeMonitorRequest{MID: "mid-1", Type: 1, Name: "Homepage", Extra: map[string]any{"extra_option": true}}
+	request := UptimeMonitorRequest{MID: "mid-1", Type: "http", Name: "Homepage", Target: "https://example.com"}
 	created, err := c.CreateUptimeMonitor(context.Background(), request)
 	if err != nil {
 		t.Fatalf("CreateUptimeMonitor returned error: %s", err)
@@ -579,6 +579,9 @@ func TestUptimeMonitorUnmarshalAcceptsLegacyCamelCaseFields(t *testing.T) {
 	if got, want := monitor.ContactListID, "contacts-1"; got != want {
 		t.Fatalf("contact list = %q, want %q", got, want)
 	}
+	if got, want := monitor.Type, "http"; got != want {
+		t.Fatalf("type = %q, want %q", got, want)
+	}
 	if got, want := monitor.FailsBeforeAlert, int64(3); got != want {
 		t.Fatalf("fails before alert = %d, want %d", got, want)
 	}
@@ -588,8 +591,8 @@ func TestUptimeMonitorUnmarshalAcceptsLegacyCamelCaseFields(t *testing.T) {
 	if monitor.VerSSLCert == nil || !*monitor.VerSSLCert {
 		t.Fatalf("verify SSL certificate = %#v, want true", monitor.VerSSLCert)
 	}
-	if got, want := monitor.Locations["ams"], true; got != want {
-		t.Fatalf("ams location = %v, want %v", got, want)
+	if !containsString(monitor.Locations, "amsterdam") {
+		t.Fatalf("amsterdam location missing: %#v", monitor.Locations)
 	}
 	if monitor.InfoPublic == nil || !*monitor.InfoPublic {
 		t.Fatalf("info public = %#v, want true", monitor.InfoPublic)
@@ -606,6 +609,10 @@ func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) 
 			"name":"Homepage",
 			"type":"website",
 			"target":"https://example.com",
+			"port":null,
+			"http_method":"GET",
+			"max_redirects":5,
+			"agent_id":"agent-1",
 			"timeout":10,
 			"check_frequency":1,
 			"contact_lists":["contacts-1"],
@@ -629,8 +636,8 @@ func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) 
 		t.Fatalf("uptime monitors length = %d, want %d", got, want)
 	}
 	monitor := response.UptimeMonitors[0]
-	if got, want := monitor.Type, int64(1); got != want {
-		t.Fatalf("type = %d, want %d", got, want)
+	if got, want := monitor.Type, "http"; got != want {
+		t.Fatalf("type = %q, want %q", got, want)
 	}
 	if got, want := monitor.Frequency, int64(1); got != want {
 		t.Fatalf("frequency = %d, want %d", got, want)
@@ -638,14 +645,158 @@ func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) 
 	if got, want := monitor.ContactListID, "contacts-1"; got != want {
 		t.Fatalf("contact list = %q, want %q", got, want)
 	}
+	if got, want := monitor.HTTPMethod, "GET"; got != want {
+		t.Fatalf("http method = %q, want %q", got, want)
+	}
+	if got, want := monitor.MaxRedirects, int64(5); got != want {
+		t.Fatalf("max redirects = %d, want %d", got, want)
+	}
+	if got, want := monitor.ServerID, "agent-1"; got != want {
+		t.Fatalf("server ID = %q, want %q", got, want)
+	}
 	if got, want := monitor.AlertAfter, "5m"; got != want {
 		t.Fatalf("alert after = %q, want %q", got, want)
 	}
 	if got, want := monitor.RepeatEvery, "60m"; got != want {
 		t.Fatalf("repeat every = %q, want %q", got, want)
 	}
-	if !monitor.Locations["new_york"] {
+	if !containsString(monitor.Locations, "new_york") {
 		t.Fatalf("new_york location missing or false: %#v", monitor.Locations)
+	}
+}
+
+func TestUptimeMonitorRequestMarshalConvertsCanonicalLocationsToV2Codes(t *testing.T) {
+	t.Parallel()
+
+	body, err := json.Marshal(UptimeMonitorRequest{
+		MID:             "up-1",
+		Type:            "http",
+		Name:            "Homepage",
+		Target:          "https://example.com",
+		HTTPMethod:      "GET",
+		MaxRedirects:    5,
+		FailedLocations: 3,
+		Locations:       []string{"new_york", "san_francisco", "dallas", "amsterdam"},
+		Keyword:         "healthy",
+		HTTPCodes:       []int64{200, 204},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %s", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal request payload: %s", err)
+	}
+	locations, ok := payload["Locations"].(map[string]any)
+	if !ok {
+		t.Fatalf("Locations missing or wrong type: %#v", payload["Locations"])
+	}
+	for _, location := range []string{"nyc", "sfo", "dal", "ams"} {
+		if locations[location] != true {
+			t.Fatalf("location %q missing from payload: %#v", location, locations)
+		}
+	}
+	for _, location := range []string{"new_york", "san_francisco", "dallas", "amsterdam"} {
+		if _, ok := locations[location]; ok {
+			t.Fatalf("canonical location %q leaked into v2 payload: %#v", location, locations)
+		}
+	}
+	if got, want := payload["Type"], float64(1); got != want {
+		t.Fatalf("Type = %#v, want %#v", got, want)
+	}
+	if got, want := payload["Keyword"], "healthy"; got != want {
+		t.Fatalf("Keyword = %#v, want %#v", got, want)
+	}
+	if got, want := payload["Method"], "GET"; got != want {
+		t.Fatalf("Method = %#v, want %#v", got, want)
+	}
+	if got, want := payload["MaxRedirects"], float64(5); got != want {
+		t.Fatalf("MaxRedirects = %#v, want %#v", got, want)
+	}
+	httpCodes, ok := payload["HTTPCodes"].([]any)
+	if !ok || len(httpCodes) != 2 || httpCodes[0] != float64(200) || httpCodes[1] != float64(204) {
+		t.Fatalf("HTTPCodes = %#v, want [200 204]", payload["HTTPCodes"])
+	}
+}
+
+func TestUptimeMonitorRequestMarshalIncludesSMTPFields(t *testing.T) {
+	t.Parallel()
+
+	body, err := json.Marshal(UptimeMonitorRequest{
+		Type:     "smtp",
+		Name:     "SMTP",
+		Target:   "smtp.example.com",
+		Port:     587,
+		SMTPUser: "user",
+		SMTPPass: "pass",
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %s", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal request payload: %s", err)
+	}
+	if got, want := payload["Type"], float64(3); got != want {
+		t.Fatalf("Type = %#v, want %#v", got, want)
+	}
+	if got, want := payload["Port"], float64(587); got != want {
+		t.Fatalf("Port = %#v, want %#v", got, want)
+	}
+	if got, want := payload["SMTPUser"], "user"; got != want {
+		t.Fatalf("SMTPUser = %#v, want %#v", got, want)
+	}
+	if got, want := payload["SMTPPass"], "pass"; got != want {
+		t.Fatalf("SMTPPass = %#v, want %#v", got, want)
+	}
+}
+
+func TestUptimeMonitorRequestMarshalRejectsUnknownType(t *testing.T) {
+	t.Parallel()
+
+	_, err := json.Marshal(UptimeMonitorRequest{Type: "dns", Name: "DNS"})
+	if err == nil || !strings.Contains(err.Error(), `unknown uptime monitor type "dns"`) {
+		t.Fatalf("error = %v, want unknown type error", err)
+	}
+}
+
+func TestUptimeMonitorRequestMarshalRejectsUnknownLocation(t *testing.T) {
+	t.Parallel()
+
+	_, err := json.Marshal(UptimeMonitorRequest{Type: "http", Name: "Homepage", Target: "https://example.com", Locations: []string{"antarctica"}})
+	if err == nil || !strings.Contains(err.Error(), `unknown uptime monitor location "antarctica"`) {
+		t.Fatalf("error = %v, want unknown location error", err)
+	}
+}
+
+func TestUptimeMonitorRequestValidateRejectsTypeSpecificFields(t *testing.T) {
+	t.Parallel()
+
+	_, err := json.Marshal(UptimeMonitorRequest{Type: "http", Name: "Homepage"})
+	if err == nil || !strings.Contains(err.Error(), "target is required for http uptime monitors") {
+		t.Fatalf("error = %v, want http target error", err)
+	}
+
+	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Port: 587, Keyword: "healthy"})
+	if err == nil || !strings.Contains(err.Error(), "keyword is only supported for http uptime monitors") {
+		t.Fatalf("error = %v, want keyword type error", err)
+	}
+
+	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Target: "smtp.example.com"})
+	if err == nil || !strings.Contains(err.Error(), "port is required for smtp uptime monitors") {
+		t.Fatalf("error = %v, want smtp port error", err)
+	}
+
+	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Target: "smtp.example.com", Port: 587, SMTPUser: "user"})
+	if err == nil || !strings.Contains(err.Error(), "smtp_user and smtp_password must be set together") {
+		t.Fatalf("error = %v, want smtp auth pair error", err)
+	}
+
+	_, err = json.Marshal(UptimeMonitorRequest{Type: "heartbeat", Name: "Heartbeat", Target: "https://example.com"})
+	if err == nil || !strings.Contains(err.Error(), "target is not supported for heartbeat uptime monitors") {
+		t.Fatalf("error = %v, want heartbeat target error", err)
 	}
 }
 
@@ -674,6 +825,15 @@ func TestBlacklistMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.
 	if got, want := monitor.Contact, "contacts-1"; got != want {
 		t.Fatalf("contact = %q, want %q", got, want)
 	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func writePage(w http.ResponseWriter, name string, page string, first string, second string) {

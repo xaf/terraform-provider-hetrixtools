@@ -2,6 +2,8 @@
 
 This repository contains a reusable Go client for HetrixTools plus a Terraform Plugin Framework provider built on top of that client.
 
+This project is not affiliated with, endorsed by, or supported by HetrixTools. It is provided without any guarantee that the HetrixTools API or this provider will behave as expected for your account.
+
 The client lives in `client/` and exposes semantic methods such as `GetUptimeMonitor`, `CreateUptimeMonitor`, `CreateBlacklistMonitor`, and `CreateScheduledMaintenance`. HetrixTools API-version selection, bearer auth, and token-in-path behavior stay inside the client.
 
 The Terraform provider lives in `terraform-provider/` and calls the semantic client methods instead of hard-coding HetrixTools API versions.
@@ -34,6 +36,33 @@ Typed read-only data sources:
 - `hetrixtools_scheduled_maintenances`
 
 The provider combines the latest REST endpoints with older HetrixTools APIs where needed so uptime and blacklist monitor management are available as Terraform resources.
+
+## Terraform Documentation
+
+HCL documentation is available on the Terraform Registry:
+
+- https://registry.terraform.io/providers/xaf/hetrixtools/latest/docs
+
+The same Terraform Registry-format documentation is maintained in `docs/`:
+
+- Provider configuration: `docs/index.md`
+- Resources: `docs/resources/`
+- Data sources: `docs/data-sources/`
+
+The resource docs are written in Terraform Registry format and are the canonical HCL reference for this provider.
+
+## Go Client Documentation
+
+The Go client package is documented in `client/`, and the published package documentation is available at https://pkg.go.dev/github.com/xaf/terraform-provider-hetrixtools/client.
+
+To preview the package docs locally:
+
+```bash
+go install golang.org/x/pkgsite/cmd/pkgsite@latest
+pkgsite -http=:6060
+```
+
+Then open `http://localhost:6060/github.com/xaf/terraform-provider-hetrixtools/client`.
 
 ## Configuration
 
@@ -83,3 +112,7 @@ terraform-provider-hetrixtools_X.Y.Z_linux_amd64.zip
 ```
 
 These assets are consumed by the Terraform infrastructure workspace cache script.
+
+## License
+
+Apache-2.0. See `LICENSE`.

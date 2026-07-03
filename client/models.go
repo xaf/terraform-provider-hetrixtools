@@ -2,7 +2,9 @@ package hetrixtools
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 )
 
@@ -133,62 +135,176 @@ func (r BlacklistMonitorRequest) form() url.Values {
 
 // UptimeMonitorRequest describes an uptime monitor create or update request.
 type UptimeMonitorRequest struct {
-	MID              string          `json:"MID,omitempty"`
-	Type             int64           `json:"Type,omitempty"`
-	Name             string          `json:"Name,omitempty"`
-	Target           string          `json:"Target,omitempty"`
-	Port             int64           `json:"Port,omitempty"`
-	Timeout          int64           `json:"Timeout,omitempty"`
-	Frequency        int64           `json:"Frequency,omitempty"`
-	FailsBeforeAlert int64           `json:"FailsBeforeAlert,omitempty"`
-	FailedLocations  int64           `json:"FailedLocations,omitempty"`
-	ContactList      string          `json:"ContactList,omitempty"`
-	Category         string          `json:"Category,omitempty"`
-	AlertAfter       string          `json:"AlertAfter,omitempty"`
-	RepeatTimes      int64           `json:"RepeatTimes,omitempty"`
-	RepeatEvery      string          `json:"RepeatEvery,omitempty"`
-	Public           *bool           `json:"Public,omitempty"`
-	ShowTarget       *bool           `json:"ShowTarget,omitempty"`
-	VerSSLCert       *bool           `json:"VerSSLCert,omitempty"`
-	VerSSLHost       *bool           `json:"VerSSLHost,omitempty"`
-	Locations        map[string]bool `json:"Locations,omitempty"`
-	Grace            int64           `json:"Grace,omitempty"`
-	INFOPub          *bool           `json:"INFOPub,omitempty"`
-	CPUPub           *bool           `json:"CPUPub,omitempty"`
-	RAMPub           *bool           `json:"RAMPub,omitempty"`
-	DISKPub          *bool           `json:"DISKPub,omitempty"`
-	NETPub           *bool           `json:"NETPub,omitempty"`
-	Extra            map[string]any  `json:"-"`
+	MID              string   `json:"MID,omitempty"`
+	Type             string   `json:"-"`
+	Name             string   `json:"Name,omitempty"`
+	Target           string   `json:"Target,omitempty"`
+	Port             int64    `json:"Port,omitempty"`
+	HTTPMethod       string   `json:"Method,omitempty"`
+	MaxRedirects     int64    `json:"MaxRedirects,omitempty"`
+	SMTPUser         string   `json:"SMTPUser,omitempty"`
+	SMTPPass         string   `json:"SMTPPass,omitempty"`
+	Timeout          int64    `json:"Timeout,omitempty"`
+	Frequency        int64    `json:"Frequency,omitempty"`
+	FailsBeforeAlert int64    `json:"FailsBeforeAlert,omitempty"`
+	FailedLocations  int64    `json:"FailedLocations,omitempty"`
+	ContactList      string   `json:"ContactList,omitempty"`
+	Category         string   `json:"Category,omitempty"`
+	AlertAfter       string   `json:"AlertAfter,omitempty"`
+	RepeatTimes      int64    `json:"RepeatTimes,omitempty"`
+	RepeatEvery      string   `json:"RepeatEvery,omitempty"`
+	Public           *bool    `json:"Public,omitempty"`
+	ShowTarget       *bool    `json:"ShowTarget,omitempty"`
+	VerSSLCert       *bool    `json:"VerSSLCert,omitempty"`
+	VerSSLHost       *bool    `json:"VerSSLHost,omitempty"`
+	Locations        []string `json:"-"`
+	Keyword          string   `json:"-"`
+	HTTPCodes        []int64  `json:"-"`
+	Grace            int64    `json:"Grace,omitempty"`
+	INFOPub          *bool    `json:"INFOPub,omitempty"`
+	CPUPub           *bool    `json:"CPUPub,omitempty"`
+	RAMPub           *bool    `json:"RAMPub,omitempty"`
+	DISKPub          *bool    `json:"DISKPub,omitempty"`
+	NETPub           *bool    `json:"NETPub,omitempty"`
+}
+
+// MarshalJSON translates the canonical client model into the v2 add/update API shape.
+func (r UptimeMonitorRequest) MarshalJSON() ([]byte, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	type uptimeMonitorRequest UptimeMonitorRequest
+	body, err := json.Marshal(uptimeMonitorRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if len(r.Locations) > 0 {
+		locations, _ := uptimeLocationCodes(r.Locations)
+		payload["Locations"] = locations
+	}
+	if r.Type != "" {
+		typeID, _ := uptimeMonitorTypeID(r.Type)
+		payload["Type"] = typeID
+	}
+	if r.Keyword != "" {
+		payload["Keyword"] = r.Keyword
+	}
+	if len(r.HTTPCodes) > 0 {
+		payload["HTTPCodes"] = r.HTTPCodes
+	}
+	return json.Marshal(payload)
+}
+
+// Validate rejects combinations the HetrixTools uptime API cannot represent.
+func (r UptimeMonitorRequest) Validate() error {
+	monitorType := r.Type
+	if monitorType == "" {
+		return nil
+	}
+	if _, err := uptimeMonitorTypeID(monitorType); err != nil {
+		return err
+	}
+	if _, err := uptimeLocationCodes(r.Locations); err != nil {
+		return err
+	}
+
+	if monitorType != "http" {
+		if r.HTTPMethod != "" {
+			return fmt.Errorf("http_method is only supported for http uptime monitors")
+		}
+		if r.MaxRedirects != 0 {
+			return fmt.Errorf("max_redirects is only supported for http uptime monitors")
+		}
+		if r.Keyword != "" {
+			return fmt.Errorf("keyword is only supported for http uptime monitors")
+		}
+		if len(r.HTTPCodes) > 0 {
+			return fmt.Errorf("accepted_http_codes is only supported for http uptime monitors")
+		}
+	}
+
+	if monitorType != "smtp" {
+		if r.Port != 0 {
+			return fmt.Errorf("port is only supported for smtp uptime monitors")
+		}
+		if r.SMTPUser != "" {
+			return fmt.Errorf("smtp_user is only supported for smtp uptime monitors")
+		}
+		if r.SMTPPass != "" {
+			return fmt.Errorf("smtp_password is only supported for smtp uptime monitors")
+		}
+	}
+	if monitorType == "smtp" && r.Port == 0 {
+		return fmt.Errorf("port is required for smtp uptime monitors")
+	}
+	if (r.SMTPUser == "") != (r.SMTPPass == "") {
+		return fmt.Errorf("smtp_user and smtp_password must be set together")
+	}
+	if monitorType == "http" || monitorType == "ping" || monitorType == "smtp" {
+		if r.Target == "" {
+			return fmt.Errorf("target is required for %s uptime monitors", monitorType)
+		}
+	}
+
+	if monitorType != "heartbeat" {
+		if r.Grace != 0 || r.INFOPub != nil || r.CPUPub != nil || r.RAMPub != nil || r.DISKPub != nil || r.NETPub != nil {
+			return fmt.Errorf("heartbeat visibility and grace settings are only supported for heartbeat uptime monitors")
+		}
+	}
+	if monitorType == "heartbeat" {
+		if r.Target != "" {
+			return fmt.Errorf("target is not supported for heartbeat uptime monitors")
+		}
+		if len(r.Locations) > 0 || r.FailedLocations != 0 {
+			return fmt.Errorf("locations and failed_locations are not supported for heartbeat uptime monitors")
+		}
+	}
+
+	if monitorType != "http" && monitorType != "smtp" {
+		if r.VerSSLCert != nil || r.VerSSLHost != nil {
+			return fmt.Errorf("SSL verification settings are only supported for http and smtp uptime monitors")
+		}
+	}
+	return nil
 }
 
 // UptimeMonitor describes a HetrixTools uptime monitor.
 type UptimeMonitor struct {
-	ID               string          `json:"id"`
-	Type             int64           `json:"type"`
-	Name             string          `json:"name"`
-	Target           string          `json:"target"`
-	Timeout          int64           `json:"timeout"`
-	Frequency        int64           `json:"frequency"`
-	FailsBeforeAlert int64           `json:"fails_before_alert"`
-	FailedLocations  int64           `json:"failed_locations"`
-	ContactListID    string          `json:"contact_list_id"`
-	Category         string          `json:"category"`
-	AlertAfter       string          `json:"alert_after"`
-	RepeatTimes      int64           `json:"repeat_times"`
-	RepeatEvery      string          `json:"repeat_every"`
-	Public           *bool           `json:"public"`
-	ShowTarget       *bool           `json:"show_target"`
-	VerSSLCert       *bool           `json:"verify_ssl_certificate"`
-	VerSSLHost       *bool           `json:"verify_ssl_host"`
-	Locations        map[string]bool `json:"locations"`
-	Grace            int64           `json:"grace"`
-	InfoPublic       *bool           `json:"info_public"`
-	CPUPublic        *bool           `json:"cpu_public"`
-	RAMPublic        *bool           `json:"ram_public"`
-	DiskPublic       *bool           `json:"disk_public"`
-	NetPublic        *bool           `json:"net_public"`
-	ServerID         string          `json:"server_id"`
-	Extra            map[string]any  `json:"-"`
+	ID               string   `json:"id"`
+	Type             string   `json:"-"`
+	Name             string   `json:"name"`
+	Target           string   `json:"target"`
+	Port             int64    `json:"port"`
+	HTTPMethod       string   `json:"http_method"`
+	MaxRedirects     int64    `json:"max_redirects"`
+	SMTPUser         string   `json:"smtp_user"`
+	Timeout          int64    `json:"timeout"`
+	Frequency        int64    `json:"frequency"`
+	FailsBeforeAlert int64    `json:"fails_before_alert"`
+	FailedLocations  int64    `json:"failed_locations"`
+	ContactListID    string   `json:"contact_list_id"`
+	Category         string   `json:"category"`
+	AlertAfter       string   `json:"alert_after"`
+	RepeatTimes      int64    `json:"repeat_times"`
+	RepeatEvery      string   `json:"repeat_every"`
+	Public           *bool    `json:"public"`
+	ShowTarget       *bool    `json:"show_target"`
+	VerSSLCert       *bool    `json:"verify_ssl_certificate"`
+	VerSSLHost       *bool    `json:"verify_ssl_host"`
+	Locations        []string `json:"-"`
+	Keyword          string   `json:"keyword"`
+	HTTPCodes        []int64  `json:"accepted_http_codes"`
+	Grace            int64    `json:"grace"`
+	InfoPublic       *bool    `json:"info_public"`
+	CPUPublic        *bool    `json:"cpu_public"`
+	RAMPublic        *bool    `json:"ram_public"`
+	DiskPublic       *bool    `json:"disk_public"`
+	NetPublic        *bool    `json:"net_public"`
+	ServerID         string   `json:"server_id"`
 }
 
 // UnmarshalJSON accepts both v3 snake_case fields and legacy v2 camel-case names.
@@ -200,6 +316,11 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		IDMID                 string          `json:"MID"`
 		IDCamel               string          `json:"MonitorID"`
 		TypeRaw               json.RawMessage `json:"type"`
+		TypeCamel             json.RawMessage `json:"Type"`
+		AgentID               string          `json:"agent_id"`
+		HTTPMethodCamel       string          `json:"Method"`
+		MaxRedirectsCamel     int64           `json:"MaxRedirects"`
+		SMTPUserCamel         string          `json:"SMTPUser"`
 		FrequencyV3           int64           `json:"check_frequency"`
 		ContactLists          []string        `json:"contact_lists"`
 		FailsBeforeAlertV3    int64           `json:"number_of_tries"`
@@ -211,8 +332,6 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		ShowTargetV3          *bool           `json:"public_target"`
 		VerSSLHostV3          *bool           `json:"verify_ssl_hostname"`
 		LocationsV3           map[string]any  `json:"locations"`
-		KeywordV3             string          `json:"keyword"`
-		HTTPCodesV3           []int64         `json:"accepted_http_codes"`
 		ContactListCamel      string          `json:"ContactList"`
 		FailsBeforeAlertCamel int64           `json:"FailsBeforeAlert"`
 		FailedLocationsCamel  int64           `json:"FailedLocations"`
@@ -236,11 +355,23 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	if m.ID == "" {
 		m.ID = firstNonEmpty(aux.IDMonitorID, aux.IDMID, aux.IDCamel)
 	}
-	if m.Type == 0 {
-		m.Type = monitorTypeID(aux.TypeRaw)
+	if m.Type == "" {
+		m.Type = uptimeMonitorTypeName(firstNonEmptyRawMessage(aux.TypeRaw, aux.TypeCamel))
 	}
 	if m.Frequency == 0 {
 		m.Frequency = aux.FrequencyV3
+	}
+	if m.ServerID == "" {
+		m.ServerID = aux.AgentID
+	}
+	if m.HTTPMethod == "" {
+		m.HTTPMethod = aux.HTTPMethodCamel
+	}
+	if m.MaxRedirects == 0 {
+		m.MaxRedirects = aux.MaxRedirectsCamel
+	}
+	if m.SMTPUser == "" {
+		m.SMTPUser = aux.SMTPUserCamel
 	}
 	if m.ContactListID == "" {
 		if len(aux.ContactLists) > 0 {
@@ -281,12 +412,13 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	}
 	if m.Locations == nil {
 		if len(aux.LocationsV3) > 0 {
-			m.Locations = map[string]bool{}
+			m.Locations = make([]string, 0, len(aux.LocationsV3))
 			for key := range aux.LocationsV3 {
-				m.Locations[key] = true
+				m.Locations = append(m.Locations, uptimeLocationName(key))
 			}
+			sort.Strings(m.Locations)
 		} else {
-			m.Locations = aux.LocationsCamel
+			m.Locations = uptimeLocationNames(aux.LocationsCamel)
 		}
 	}
 	if m.InfoPublic == nil {
@@ -304,19 +436,98 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	if m.NetPublic == nil {
 		m.NetPublic = aux.NetPublicCamel
 	}
-	if m.Extra == nil {
-		m.Extra = map[string]any{}
-	}
-	if aux.KeywordV3 != "" {
-		m.Extra["Keyword"] = aux.KeywordV3
-	}
-	if len(aux.HTTPCodesV3) > 0 {
-		m.Extra["HTTPCodes"] = aux.HTTPCodesV3
-	}
-	if len(m.Extra) == 0 {
-		m.Extra = nil
-	}
 	return nil
+}
+
+func uptimeLocationNames(locations map[string]bool) []string {
+	if locations == nil {
+		return nil
+	}
+	normalized := make([]string, 0, len(locations))
+	for key, value := range locations {
+		if value {
+			normalized = append(normalized, uptimeLocationName(key))
+		}
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func uptimeLocationCodes(locations []string) (map[string]bool, error) {
+	if locations == nil {
+		return nil, nil
+	}
+	normalized := map[string]bool{}
+	for _, location := range locations {
+		code, ok := uptimeLocationCode(location)
+		if !ok {
+			return nil, fmt.Errorf("unknown uptime monitor location %q", location)
+		}
+		normalized[code] = true
+	}
+	return normalized, nil
+}
+
+func uptimeLocationName(location string) string {
+	switch location {
+	case "nyc":
+		return "new_york"
+	case "sfo":
+		return "san_francisco"
+	case "dal":
+		return "dallas"
+	case "ams":
+		return "amsterdam"
+	case "lon":
+		return "london"
+	case "fra":
+		return "frankfurt"
+	case "sgp":
+		return "singapore"
+	case "syd":
+		return "sydney"
+	case "sao":
+		return "sao_paulo"
+	case "tok":
+		return "tokyo"
+	case "mba":
+		return "mumbai"
+	case "waw":
+		return "warsaw"
+	default:
+		return location
+	}
+}
+
+func uptimeLocationCode(location string) (string, bool) {
+	switch location {
+	case "new_york":
+		return "nyc", true
+	case "san_francisco":
+		return "sfo", true
+	case "dallas":
+		return "dal", true
+	case "amsterdam":
+		return "ams", true
+	case "london":
+		return "lon", true
+	case "frankfurt":
+		return "fra", true
+	case "singapore":
+		return "sgp", true
+	case "sydney":
+		return "syd", true
+	case "sao_paulo":
+		return "sao", true
+	case "tokyo":
+		return "tok", true
+	case "mumbai":
+		return "mba", true
+	case "warsaw":
+		return "waw", true
+	default:
+		return "", false
+	}
 }
 
 func firstNonEmpty(values ...string) string {
@@ -326,6 +537,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstNonEmptyRawMessage(values ...json.RawMessage) json.RawMessage {
+	for _, value := range values {
+		if len(value) > 0 {
+			return value
+		}
+	}
+	return nil
 }
 
 func firstNonEmptySlice[T any](values ...[]T) []T {
@@ -362,26 +582,52 @@ func durationMinutes(minutes int64) string {
 	return strconv.FormatInt(minutes, 10) + "m"
 }
 
-func monitorTypeID(raw json.RawMessage) int64 {
+func uptimeMonitorTypeName(raw json.RawMessage) string {
 	var id int64
 	if err := json.Unmarshal(raw, &id); err == nil {
-		return id
+		switch id {
+		case 1:
+			return "http"
+		case 2:
+			return "ping"
+		case 3:
+			return "smtp"
+		case 9:
+			return "heartbeat"
+		default:
+			return ""
+		}
 	}
 	var name string
 	if err := json.Unmarshal(raw, &name); err != nil {
-		return 0
+		return ""
 	}
 	switch name {
-	case "website":
-		return 1
+	case "website", "http":
+		return "http"
 	case "ping", "service":
-		return 2
+		return "ping"
 	case "smtp":
-		return 3
-	case "server", "server_agent":
-		return 9
+		return "smtp"
+	case "server", "server_agent", "heartbeat":
+		return "heartbeat"
 	default:
-		return 0
+		return name
+	}
+}
+
+func uptimeMonitorTypeID(name string) (int64, error) {
+	switch name {
+	case "http":
+		return 1, nil
+	case "ping":
+		return 2, nil
+	case "smtp":
+		return 3, nil
+	case "heartbeat":
+		return 9, nil
+	default:
+		return 0, fmt.Errorf("unknown uptime monitor type %q", name)
 	}
 }
 
@@ -456,17 +702,4 @@ type StatusPagesResponse struct {
 // ServerAgentResponse describes the server agent attached to an uptime monitor.
 type ServerAgentResponse struct {
 	AgentID *string `json:"agent_id"`
-}
-
-// MarshalJSON merges Extra fields into the uptime monitor request payload.
-func (r UptimeMonitorRequest) MarshalJSON() ([]byte, error) {
-	type alias UptimeMonitorRequest
-	base, err := marshalWithoutExtra(alias(r))
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range r.Extra {
-		base[key] = value
-	}
-	return marshalMap(base)
 }

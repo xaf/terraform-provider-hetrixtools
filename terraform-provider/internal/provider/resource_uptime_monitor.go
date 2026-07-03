@@ -2,15 +2,15 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
@@ -18,15 +18,21 @@ import (
 
 var _ resource.Resource = (*uptimeMonitorResource)(nil)
 var _ resource.ResourceWithConfigure = (*uptimeMonitorResource)(nil)
+var _ resource.ResourceWithValidateConfig = (*uptimeMonitorResource)(nil)
 var _ resource.ResourceWithImportState = (*uptimeMonitorResource)(nil)
 
 type uptimeMonitorResource struct{ client *hetrixtools.Client }
 
 type uptimeMonitorModel struct {
 	ID               types.String `tfsdk:"id"`
-	Type             types.Int64  `tfsdk:"type"`
+	Type             types.String `tfsdk:"type"`
 	Name             types.String `tfsdk:"name"`
 	Target           types.String `tfsdk:"target"`
+	Port             types.Int64  `tfsdk:"port"`
+	HTTPMethod       types.String `tfsdk:"http_method"`
+	MaxRedirects     types.Int64  `tfsdk:"max_redirects"`
+	SMTPUser         types.String `tfsdk:"smtp_user"`
+	SMTPPass         types.String `tfsdk:"smtp_password"`
 	Timeout          types.Int64  `tfsdk:"timeout"`
 	Frequency        types.Int64  `tfsdk:"frequency"`
 	FailsBeforeAlert types.Int64  `tfsdk:"fails_before_alert"`
@@ -40,14 +46,15 @@ type uptimeMonitorModel struct {
 	ShowTarget       types.Bool   `tfsdk:"show_target"`
 	VerSSLCert       types.Bool   `tfsdk:"verify_ssl_certificate"`
 	VerSSLHost       types.Bool   `tfsdk:"verify_ssl_host"`
-	Locations        types.Map    `tfsdk:"locations"`
+	Locations        types.Set    `tfsdk:"locations"`
+	Keyword          types.String `tfsdk:"keyword"`
+	HTTPCodes        types.List   `tfsdk:"accepted_http_codes"`
 	Grace            types.Int64  `tfsdk:"grace"`
 	InfoPublic       types.Bool   `tfsdk:"info_public"`
 	CPUPublic        types.Bool   `tfsdk:"cpu_public"`
 	RAMPublic        types.Bool   `tfsdk:"ram_public"`
 	DiskPublic       types.Bool   `tfsdk:"disk_public"`
 	NetPublic        types.Bool   `tfsdk:"net_public"`
-	ExtraJSON        types.String `tfsdk:"extra_json"`
 	ServerID         types.String `tfsdk:"server_id"`
 }
 
@@ -65,9 +72,14 @@ func (r *uptimeMonitorResource) Schema(_ context.Context, _ resource.SchemaReque
 				Computed:      true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"type":                   schema.Int64Attribute{Required: true, MarkdownDescription: "Monitor type: 1 website, 2 ping/service, 3 SMTP, 9 server agent."},
+			"type":                   schema.StringAttribute{Required: true, MarkdownDescription: "Monitor type: `http`, `ping`, `smtp`, or `heartbeat`. Changing this forces replacement.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"name":                   schema.StringAttribute{Required: true},
 			"target":                 optionalComputedString(),
+			"port":                   schema.Int64Attribute{Optional: true, MarkdownDescription: "Port used for SMTP monitors. Required when `type = \"smtp\"`."},
+			"http_method":            optionalComputedString(),
+			"max_redirects":          optionalComputedInt64(),
+			"smtp_user":              optionalComputedString(),
+			"smtp_password":          optionalComputedSensitiveString(),
 			"timeout":                optionalComputedInt64(),
 			"frequency":              optionalComputedInt64(),
 			"fails_before_alert":     optionalComputedInt64(),
@@ -81,26 +93,21 @@ func (r *uptimeMonitorResource) Schema(_ context.Context, _ resource.SchemaReque
 			"show_target":            optionalComputedBool(),
 			"verify_ssl_certificate": optionalComputedBool(),
 			"verify_ssl_host":        optionalComputedBool(),
-			"locations": schema.MapAttribute{
+			"locations": schema.SetAttribute{
 				Optional:            true,
 				Computed:            true,
-				ElementType:         types.BoolType,
-				MarkdownDescription: "Map of HetrixTools location code to enabled flag, e.g. `{ ams = true, nyc = false }`.",
-				PlanModifiers:       []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
+				ElementType:         types.StringType,
+				MarkdownDescription: "Set of canonical HetrixTools v3 location names enabled for this monitor, e.g. `[\"amsterdam\", \"new_york\"]`.",
+				PlanModifiers:       []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
 			},
-			"grace":       optionalComputedInt64(),
-			"info_public": optionalComputedBool(),
-			"cpu_public":  optionalComputedBool(),
-			"ram_public":  optionalComputedBool(),
-			"disk_public": optionalComputedBool(),
-			"net_public":  optionalComputedBool(),
-			"extra_json": schema.StringAttribute{
-				Optional:            true,
-				Computed:            true,
-				Sensitive:           true,
-				MarkdownDescription: "Additional JSON fields merged into the uptime monitor payload for type-specific options like Method, Keyword, HTTPCodes, SMTPUser, or SMTPPass.",
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
-			},
+			"keyword":             optionalComputedString(),
+			"accepted_http_codes": optionalComputedInt64List(),
+			"grace":               optionalComputedInt64(),
+			"info_public":         optionalComputedBool(),
+			"cpu_public":          optionalComputedBool(),
+			"ram_public":          optionalComputedBool(),
+			"disk_public":         optionalComputedBool(),
+			"net_public":          optionalComputedBool(),
 			"server_id": schema.StringAttribute{
 				Computed:      true,
 				Sensitive:     true,
@@ -114,12 +121,20 @@ func optionalComputedString() schema.StringAttribute {
 	return schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}
 }
 
+func optionalComputedSensitiveString() schema.StringAttribute {
+	return schema.StringAttribute{Optional: true, Computed: true, Sensitive: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}}
+}
+
 func optionalComputedInt64() schema.Int64Attribute {
 	return schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}}
 }
 
 func optionalComputedBool() schema.BoolAttribute {
 	return schema.BoolAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}
+}
+
+func optionalComputedInt64List() schema.ListAttribute {
+	return schema.ListAttribute{Optional: true, Computed: true, ElementType: types.Int64Type, PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()}}
 }
 
 func (r *uptimeMonitorResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -132,6 +147,91 @@ func (r *uptimeMonitorResource) Configure(_ context.Context, req resource.Config
 		return
 	}
 	r.client = c
+}
+
+func (r *uptimeMonitorResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var config uptimeMonitorModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() || config.Type.IsNull() || config.Type.IsUnknown() {
+		return
+	}
+	validateUptimeMonitorModel(&resp.Diagnostics, config)
+}
+
+func validateUptimeMonitorModel(diagnostics interface{ AddError(string, string) }, config uptimeMonitorModel) {
+	monitorType := config.Type.ValueString()
+	switch monitorType {
+	case "http", "ping", "smtp", "heartbeat":
+	default:
+		diagnostics.AddError("Invalid uptime monitor type", "type must be one of: http, ping, smtp, heartbeat")
+		return
+	}
+
+	if monitorType != "http" {
+		addIfSetString(diagnostics, config.HTTPMethod, "http_method is only supported for http uptime monitors")
+		addIfSetInt64(diagnostics, config.MaxRedirects, "max_redirects is only supported for http uptime monitors")
+		addIfSetString(diagnostics, config.Keyword, "keyword is only supported for http uptime monitors")
+		if !config.HTTPCodes.IsNull() && !config.HTTPCodes.IsUnknown() {
+			diagnostics.AddError("Invalid uptime monitor configuration", "accepted_http_codes is only supported for http uptime monitors")
+		}
+	}
+	if monitorType != "smtp" {
+		addIfSetInt64(diagnostics, config.Port, "port is only supported for smtp uptime monitors")
+		addIfSetString(diagnostics, config.SMTPUser, "smtp_user is only supported for smtp uptime monitors")
+		addIfSetString(diagnostics, config.SMTPPass, "smtp_password is only supported for smtp uptime monitors")
+	}
+	if monitorType == "smtp" && (config.Port.IsNull() || config.Port.IsUnknown()) {
+		diagnostics.AddError("Invalid uptime monitor configuration", "port is required for smtp uptime monitors")
+	}
+	if setString(config.SMTPUser) != setString(config.SMTPPass) {
+		diagnostics.AddError("Invalid uptime monitor configuration", "smtp_user and smtp_password must be set together")
+	}
+	if monitorType == "http" || monitorType == "ping" || monitorType == "smtp" {
+		if !setString(config.Target) {
+			diagnostics.AddError("Invalid uptime monitor configuration", fmt.Sprintf("target is required for %s uptime monitors", monitorType))
+		}
+	}
+	if monitorType != "heartbeat" {
+		addIfSetInt64(diagnostics, config.Grace, "grace is only supported for heartbeat uptime monitors")
+		addIfSetBool(diagnostics, config.InfoPublic, "info_public is only supported for heartbeat uptime monitors")
+		addIfSetBool(diagnostics, config.CPUPublic, "cpu_public is only supported for heartbeat uptime monitors")
+		addIfSetBool(diagnostics, config.RAMPublic, "ram_public is only supported for heartbeat uptime monitors")
+		addIfSetBool(diagnostics, config.DiskPublic, "disk_public is only supported for heartbeat uptime monitors")
+		addIfSetBool(diagnostics, config.NetPublic, "net_public is only supported for heartbeat uptime monitors")
+	}
+	if monitorType == "heartbeat" {
+		addIfSetString(diagnostics, config.Target, "target is not supported for heartbeat uptime monitors")
+		addIfSetInt64(diagnostics, config.FailedLocations, "failed_locations is not supported for heartbeat uptime monitors")
+		if !config.Locations.IsNull() && !config.Locations.IsUnknown() {
+			diagnostics.AddError("Invalid uptime monitor configuration", "locations is not supported for heartbeat uptime monitors")
+		}
+	}
+	if monitorType != "http" && monitorType != "smtp" {
+		addIfSetBool(diagnostics, config.VerSSLCert, "verify_ssl_certificate is only supported for http and smtp uptime monitors")
+		addIfSetBool(diagnostics, config.VerSSLHost, "verify_ssl_host is only supported for http and smtp uptime monitors")
+	}
+}
+
+func addIfSetString(diagnostics interface{ AddError(string, string) }, value types.String, message string) {
+	if setString(value) {
+		diagnostics.AddError("Invalid uptime monitor configuration", message)
+	}
+}
+
+func addIfSetInt64(diagnostics interface{ AddError(string, string) }, value types.Int64, message string) {
+	if !value.IsNull() && !value.IsUnknown() {
+		diagnostics.AddError("Invalid uptime monitor configuration", message)
+	}
+}
+
+func addIfSetBool(diagnostics interface{ AddError(string, string) }, value types.Bool, message string) {
+	if !value.IsNull() && !value.IsUnknown() {
+		diagnostics.AddError("Invalid uptime monitor configuration", message)
+	}
+}
+
+func setString(value types.String) bool {
+	return !value.IsNull() && !value.IsUnknown() && value.ValueString() != ""
 }
 
 func (r *uptimeMonitorResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -223,9 +323,16 @@ func (r *uptimeMonitorResource) find(ctx context.Context, id string) (*hetrixtoo
 
 func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimeMonitorModel {
 	state.ID = types.StringValue(monitor.ID)
-	state.Type = types.Int64Value(monitor.Type)
+	state.Type = types.StringValue(monitor.Type)
 	state.Name = types.StringValue(monitor.Name)
 	state.Target = types.StringValue(monitor.Target)
+	state.Port = types.Int64Value(monitor.Port)
+	state.HTTPMethod = stringNullIfEmpty(monitor.HTTPMethod)
+	state.MaxRedirects = types.Int64Value(monitor.MaxRedirects)
+	state.SMTPUser = stringNullIfEmpty(monitor.SMTPUser)
+	if state.SMTPPass.IsNull() || state.SMTPPass.IsUnknown() {
+		state.SMTPPass = types.StringNull()
+	}
 	state.Timeout = types.Int64Value(monitor.Timeout)
 	state.Frequency = types.Int64Value(monitor.Frequency)
 	state.FailsBeforeAlert = types.Int64Value(monitor.FailsBeforeAlert)
@@ -239,6 +346,8 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	state.ShowTarget = boolFromPointer(monitor.ShowTarget)
 	state.VerSSLCert = boolFromPointer(monitor.VerSSLCert)
 	state.VerSSLHost = boolFromPointer(monitor.VerSSLHost)
+	state.Keyword = stringNullIfEmpty(monitor.Keyword)
+	state.HTTPCodes = int64ListFromAPI(ctx, state.HTTPCodes, monitor.HTTPCodes, diagnostics)
 	state.Grace = types.Int64Value(monitor.Grace)
 	state.InfoPublic = boolFromPointer(monitor.InfoPublic)
 	state.CPUPublic = boolFromPointer(monitor.CPUPublic)
@@ -246,12 +355,11 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	state.DiskPublic = boolFromPointer(monitor.DiskPublic)
 	state.NetPublic = boolFromPointer(monitor.NetPublic)
 	state.ServerID = stringNullIfEmpty(monitor.ServerID)
-	state.ExtraJSON = extraJSONFromAPI(state.ExtraJSON, monitor.Extra, diagnostics)
 
 	if monitor.Locations == nil {
-		state.Locations = types.MapNull(types.BoolType)
+		state.Locations = types.SetNull(types.StringType)
 	} else {
-		locations, diags := types.MapValueFrom(ctx, types.BoolType, monitor.Locations)
+		locations, diags := types.SetValueFrom(ctx, types.StringType, monitor.Locations)
 		if diags.HasError() {
 			diagnostics.AddError("Invalid uptime monitor locations", fmt.Sprintf("Could not encode locations: %v", diags))
 			return state
@@ -275,61 +383,54 @@ func stringNullIfEmpty(value string) types.String {
 	return types.StringValue(value)
 }
 
-func extraJSONFromAPI(current types.String, extra map[string]any, diagnostics interface{ AddError(string, string) }) types.String {
-	if len(extra) == 0 {
+func int64ListFromAPI(ctx context.Context, current types.List, values []int64, diagnostics interface{ AddError(string, string) }) types.List {
+	if len(values) == 0 {
 		if current.IsNull() || current.IsUnknown() {
-			return types.StringNull()
+			return types.ListNull(types.Int64Type)
 		}
 		return current
 	}
-
-	merged := map[string]any{}
-	if !current.IsNull() && !current.IsUnknown() {
-		if err := json.Unmarshal([]byte(current.ValueString()), &merged); err != nil {
-			diagnostics.AddError("Invalid uptime monitor extra_json", fmt.Sprintf("Could not decode extra_json: %v", err))
-			return current
-		}
-	}
-	for key, value := range extra {
-		merged[key] = value
-	}
-
-	body, err := json.Marshal(merged)
-	if err != nil {
-		diagnostics.AddError("Invalid uptime monitor extra fields", fmt.Sprintf("Could not encode extra fields: %v", err))
+	list, diags := types.ListValueFrom(ctx, types.Int64Type, values)
+	if diags.HasError() {
+		diagnostics.AddError("Invalid uptime monitor integer list", fmt.Sprintf("Could not encode integer list: %v", diags))
 		return current
 	}
-	return types.StringValue(string(body))
+	return list
 }
 
 func uptimeMonitorRequestFromModel(ctx context.Context, model uptimeMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
-	locations := map[string]types.Bool{}
+	var locationValues []string
 	if !model.Locations.IsNull() && !model.Locations.IsUnknown() {
+		var locations []types.String
 		if diags := model.Locations.ElementsAs(ctx, &locations, false); diags.HasError() {
 			diagnostics.AddError("Invalid locations", fmt.Sprintf("Could not decode locations: %v", diags))
 			return hetrixtools.UptimeMonitorRequest{}
 		}
-	}
-	locationValues := map[string]bool{}
-	for key, value := range locations {
-		if !value.IsNull() && !value.IsUnknown() {
-			locationValues[key] = value.ValueBool()
+		for _, location := range locations {
+			if !location.IsNull() && !location.IsUnknown() {
+				locationValues = append(locationValues, location.ValueString())
+			}
 		}
 	}
 
-	extra := map[string]any{}
-	if !model.ExtraJSON.IsNull() && !model.ExtraJSON.IsUnknown() && model.ExtraJSON.ValueString() != "" {
-		if err := json.Unmarshal([]byte(model.ExtraJSON.ValueString()), &extra); err != nil {
-			diagnostics.AddError("Invalid extra_json", "extra_json must be a JSON object: "+err.Error())
+	var httpCodes []int64
+	if !model.HTTPCodes.IsNull() && !model.HTTPCodes.IsUnknown() {
+		if diags := model.HTTPCodes.ElementsAs(ctx, &httpCodes, false); diags.HasError() {
+			diagnostics.AddError("Invalid accepted_http_codes", fmt.Sprintf("Could not decode accepted_http_codes: %v", diags))
 			return hetrixtools.UptimeMonitorRequest{}
 		}
 	}
 
 	return hetrixtools.UptimeMonitorRequest{
 		MID:              stringValue(model.ID, ""),
-		Type:             int64Value(model.Type, 0),
+		Type:             model.Type.ValueString(),
 		Name:             model.Name.ValueString(),
 		Target:           stringValue(model.Target, ""),
+		Port:             int64Value(model.Port, 0),
+		HTTPMethod:       stringValue(model.HTTPMethod, ""),
+		MaxRedirects:     int64Value(model.MaxRedirects, 0),
+		SMTPUser:         stringValue(model.SMTPUser, ""),
+		SMTPPass:         stringValue(model.SMTPPass, ""),
 		Timeout:          int64Value(model.Timeout, 0),
 		Frequency:        int64Value(model.Frequency, 0),
 		FailsBeforeAlert: int64Value(model.FailsBeforeAlert, 0),
@@ -344,13 +445,14 @@ func uptimeMonitorRequestFromModel(ctx context.Context, model uptimeMonitorModel
 		VerSSLCert:       boolPointer(model.VerSSLCert),
 		VerSSLHost:       boolPointer(model.VerSSLHost),
 		Locations:        locationValues,
+		Keyword:          stringValue(model.Keyword, ""),
+		HTTPCodes:        httpCodes,
 		Grace:            int64Value(model.Grace, 0),
 		INFOPub:          boolPointer(model.InfoPublic),
 		CPUPub:           boolPointer(model.CPUPublic),
 		RAMPub:           boolPointer(model.RAMPublic),
 		DISKPub:          boolPointer(model.DiskPublic),
 		NETPub:           boolPointer(model.NetPublic),
-		Extra:            extra,
 	}
 }
 
