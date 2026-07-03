@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	hetrixtools "github.com/xaf/go-hetrixtools/client"
+	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
 )
 
 func ExampleClient_GetUptimeMonitor() {

@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     hetrixtools = {
-      source = "github.com/xaf/go-hetrixtools"
+      source = "xaf/hetrixtools"
     }
   }
 }

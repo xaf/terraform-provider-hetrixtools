@@ -435,6 +435,46 @@ func TestClientReturnsErrorAndRejectsAbsoluteEndpointPaths(t *testing.T) {
 	}
 }
 
+func TestClientDerivesVersionedBaseURLs(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		base string
+		v2   string
+		v3   string
+	}{
+		{name: "root", base: "https://api.example.test", v2: "https://api.example.test/v2", v3: "https://api.example.test/v3"},
+		{name: "root trailing slash", base: "https://api.example.test/", v2: "https://api.example.test/v2", v3: "https://api.example.test/v3"},
+		{name: "v2 compatibility", base: "https://api.example.test/v2", v2: "https://api.example.test/v2", v3: "https://api.example.test/v3"},
+		{name: "v3 compatibility", base: "https://api.example.test/v3", v2: "https://api.example.test/v2", v3: "https://api.example.test/v3"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := NewClientWithBaseURL(tt.base, "test-token")
+			if c.v2BaseURL != tt.v2 {
+				t.Fatalf("v2BaseURL = %q, want %q", c.v2BaseURL, tt.v2)
+			}
+			if c.v3BaseURL != tt.v3 {
+				t.Fatalf("v3BaseURL = %q, want %q", c.v3BaseURL, tt.v3)
+			}
+		})
+	}
+}
+
+func TestClientAllowsVersionedBaseURLOverrides(t *testing.T) {
+	t.Parallel()
+
+	c := NewClientWithBaseURL("https://api.example.test", "test-token", WithV2BaseURL("https://v2.example.test/"), WithV3BaseURL("https://v3.example.test/"))
+	if c.v2BaseURL != "https://v2.example.test" {
+		t.Fatalf("v2BaseURL = %q", c.v2BaseURL)
+	}
+	if c.v3BaseURL != "https://v3.example.test" {
+		t.Fatalf("v3BaseURL = %q", c.v3BaseURL)
+	}
+}
+
 func writePage(w http.ResponseWriter, name string, page string, first string, second string) {
 	w.Header().Set("Content-Type", "application/json")
 	if page == "" || page == "1" {

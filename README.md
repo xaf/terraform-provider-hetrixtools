@@ -46,7 +46,9 @@ provider "hetrixtools" {
 You can also use environment variables:
 
 - `HETRIXTOOLS_API_TOKEN`
-- `HETRIXTOOLS_BASE_URL`
+- `HETRIXTOOLS_BASE_URL` for the API root URL. The provider appends `/v2` and `/v3`.
+- `HETRIXTOOLS_BASE_URL_V2` to override only the v2 API base URL.
+- `HETRIXTOOLS_BASE_URL_V3` to override only the v3 API base URL.
 
 ## Example
 
@@ -77,7 +79,7 @@ CGO_ENABLED=0 go build ./...
 Terraform provider binaries are built with GoReleaser. Push a `vX.Y.Z` tag to create a GitHub release with zipped provider binaries named like:
 
 ```text
-terraform-provider-go-hetrixtools_X.Y.Z_linux_amd64.zip
+terraform-provider-hetrixtools_X.Y.Z_linux_amd64.zip
 ```
 
 These assets are consumed by the Terraform infrastructure workspace cache script.

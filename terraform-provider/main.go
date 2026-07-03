@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/xaf/go-hetrixtools/terraform-provider/internal/provider"
+	"github.com/xaf/terraform-provider-hetrixtools/terraform-provider/internal/provider"
 )
 
 var version = "dev"
@@ -18,7 +18,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "github.com/xaf/go-hetrixtools",
+		Address: "registry.terraform.io/xaf/hetrixtools",
 		Debug:   debug,
 	}
 

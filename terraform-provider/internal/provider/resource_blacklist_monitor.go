@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	hetrixtools "github.com/xaf/go-hetrixtools/client"
+	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
 )
 
 var _ resource.Resource = (*blacklistMonitorResource)(nil)

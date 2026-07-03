@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	hetrixtools "github.com/xaf/go-hetrixtools/client"
+	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
 )
 
 var _ datasource.DataSource = (*getDataSource)(nil)

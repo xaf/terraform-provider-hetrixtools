@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	hetrixtools "github.com/xaf/go-hetrixtools/client"
+	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
 )
 
 var _ provider.Provider = (*hetrixToolsProvider)(nil)
@@ -20,8 +20,10 @@ type hetrixToolsProvider struct {
 }
 
 type providerModel struct {
-	APIToken types.String `tfsdk:"api_token"`
-	BaseURL  types.String `tfsdk:"base_url"`
+	APIToken  types.String `tfsdk:"api_token"`
+	BaseURL   types.String `tfsdk:"base_url"`
+	BaseURLV2 types.String `tfsdk:"base_url_v2"`
+	BaseURLV3 types.String `tfsdk:"base_url_v3"`
 }
 
 func New(version string) func() provider.Provider {
@@ -45,7 +47,15 @@ func (p *hetrixToolsProvider) Schema(_ context.Context, _ provider.SchemaRequest
 				Sensitive:           true,
 			},
 			"base_url": schema.StringAttribute{
-				MarkdownDescription: "HetrixTools API base URL. Can also be set with `HETRIXTOOLS_BASE_URL`.",
+				MarkdownDescription: "HetrixTools API root URL. The provider appends `/v2` and `/v3`. Can also be set with `HETRIXTOOLS_BASE_URL`.",
+				Optional:            true,
+			},
+			"base_url_v2": schema.StringAttribute{
+				MarkdownDescription: "HetrixTools v2 API base URL. Overrides `base_url` for token-path endpoints. Can also be set with `HETRIXTOOLS_BASE_URL_V2`.",
+				Optional:            true,
+			},
+			"base_url_v3": schema.StringAttribute{
+				MarkdownDescription: "HetrixTools v3 API base URL. Overrides `base_url` for REST endpoints. Can also be set with `HETRIXTOOLS_BASE_URL_V3`.",
 				Optional:            true,
 			},
 		},
@@ -77,10 +87,18 @@ func (p *hetrixToolsProvider) Configure(ctx context.Context, req provider.Config
 		baseURL = config.BaseURL.ValueString()
 	}
 	if baseURL == "" {
-		baseURL = hetrixtools.DefaultV3BaseURL
+		baseURL = hetrixtools.DefaultBaseURL
+	}
+	v2BaseURL := os.Getenv("HETRIXTOOLS_BASE_URL_V2")
+	if !config.BaseURLV2.IsNull() && !config.BaseURLV2.IsUnknown() {
+		v2BaseURL = config.BaseURLV2.ValueString()
+	}
+	v3BaseURL := os.Getenv("HETRIXTOOLS_BASE_URL_V3")
+	if !config.BaseURLV3.IsNull() && !config.BaseURLV3.IsUnknown() {
+		v3BaseURL = config.BaseURLV3.ValueString()
 	}
 
-	c := hetrixtools.NewClientWithBaseURL(baseURL, token)
+	c := hetrixtools.NewClientWithBaseURL(baseURL, token, hetrixtools.WithV2BaseURL(v2BaseURL), hetrixtools.WithV3BaseURL(v3BaseURL))
 	resp.DataSourceData = c
 	resp.ResourceData = c
 }

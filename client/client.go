@@ -14,10 +14,12 @@ import (
 )
 
 const (
+	// DefaultBaseURL is the default root URL for HetrixTools API endpoints.
+	DefaultBaseURL = "https://api.hetrixtools.com"
 	// DefaultV3BaseURL is the default base URL for HetrixTools REST endpoints.
-	DefaultV3BaseURL = "https://api.hetrixtools.com/v3"
+	DefaultV3BaseURL = DefaultBaseURL + "/v3"
 	// DefaultV2BaseURL is the default base URL for older HetrixTools token-path endpoints.
-	DefaultV2BaseURL = "https://api.hetrixtools.com/v2"
+	DefaultV2BaseURL = DefaultBaseURL + "/v2"
 )
 
 // Client calls HetrixTools APIs through semantic resource methods.
@@ -48,21 +50,28 @@ func WithV2BaseURL(baseURL string) Option {
 	}
 }
 
-// NewClient returns a client configured with the default HetrixTools base URLs.
-func NewClient(token string, options ...Option) *Client {
-	return NewClientWithBaseURL(DefaultV3BaseURL, token, options...)
+// WithV3BaseURL overrides the base URL used for REST endpoints.
+func WithV3BaseURL(baseURL string) Option {
+	return func(c *Client) {
+		if strings.TrimSpace(baseURL) != "" {
+			c.v3BaseURL = strings.TrimRight(baseURL, "/")
+		}
+	}
 }
 
-// NewClientWithBaseURL returns a client configured with a custom v3 base URL.
-func NewClientWithBaseURL(v3BaseURL string, token string, options ...Option) *Client {
-	v3BaseURL = strings.TrimRight(v3BaseURL, "/")
-	if v3BaseURL == "" {
-		v3BaseURL = DefaultV3BaseURL
-	}
+// NewClient returns a client configured with the default HetrixTools base URLs.
+func NewClient(token string, options ...Option) *Client {
+	return NewClientWithBaseURL(DefaultBaseURL, token, options...)
+}
+
+// NewClientWithBaseURL returns a client configured with a custom API root URL.
+// For compatibility, baseURL may also be a versioned /v2 or /v3 URL.
+func NewClientWithBaseURL(baseURL string, token string, options ...Option) *Client {
+	v2BaseURL, v3BaseURL := versionedBaseURLs(baseURL)
 
 	c := &Client{
 		v3BaseURL: v3BaseURL,
-		v2BaseURL: inferV2BaseURL(v3BaseURL),
+		v2BaseURL: v2BaseURL,
 		token:     token,
 		http:      &http.Client{Timeout: 30 * time.Second},
 	}
@@ -225,11 +234,15 @@ func requestURL(baseURL string, path string, query map[string]string) (string, e
 	return u.String(), nil
 }
 
-func inferV2BaseURL(v3BaseURL string) string {
-	if strings.HasSuffix(v3BaseURL, "/v3") {
-		return strings.TrimSuffix(v3BaseURL, "/v3") + "/v2"
+func versionedBaseURLs(baseURL string) (string, string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
 	}
-	return DefaultV2BaseURL
+	if strings.HasSuffix(baseURL, "/v2") || strings.HasSuffix(baseURL, "/v3") {
+		baseURL = baseURL[:len(baseURL)-3]
+	}
+	return baseURL + "/v2", baseURL + "/v3"
 }
 
 // Error is the common error type returned by the client for HetrixTools API failures.
