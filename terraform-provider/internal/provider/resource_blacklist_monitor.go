@@ -6,6 +6,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	hetrixtools "github.com/xaf/terraform-provider-hetrixtools/client"
 )
@@ -33,10 +35,13 @@ func (r *blacklistMonitorResource) Schema(_ context.Context, _ resource.SchemaRe
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages a HetrixTools blacklist monitor.",
 		Attributes: map[string]schema.Attribute{
-			"id":              schema.StringAttribute{Computed: true},
+			"id": schema.StringAttribute{
+				Computed:      true,
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
 			"target":          schema.StringAttribute{Required: true, MarkdownDescription: "IP address, IP range, CIDR block, or domain name."},
-			"label":           schema.StringAttribute{Optional: true, Computed: true},
-			"contact_list_id": schema.StringAttribute{Optional: true, Computed: true},
+			"label":           optionalComputedString(),
+			"contact_list_id": optionalComputedString(),
 		},
 	}
 }
@@ -145,8 +150,8 @@ func (r *blacklistMonitorResource) find(ctx context.Context, target string) (*he
 func setBlacklistMonitorState(model *blacklistMonitorModel, monitor hetrixtools.BlacklistMonitor) {
 	model.ID = types.StringValue(firstNonEmpty(monitor.ID, monitor.Target))
 	model.Target = types.StringValue(monitor.Target)
-	model.Label = types.StringValue(firstNonEmpty(monitor.Label, monitor.Name))
-	model.Contact = types.StringValue(monitor.Contact)
+	model.Label = stringNullIfEmpty(firstNonEmpty(monitor.Label, monitor.Name))
+	model.Contact = stringNullIfEmpty(monitor.Contact)
 }
 
 func decodeActionResponse(body []byte) (hetrixtools.ActionResponse, error) {

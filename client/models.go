@@ -211,6 +211,8 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		ShowTargetV3          *bool           `json:"public_target"`
 		VerSSLHostV3          *bool           `json:"verify_ssl_hostname"`
 		LocationsV3           map[string]any  `json:"locations"`
+		KeywordV3             string          `json:"keyword"`
+		HTTPCodesV3           []int64         `json:"accepted_http_codes"`
 		ContactListCamel      string          `json:"ContactList"`
 		FailsBeforeAlertCamel int64           `json:"FailsBeforeAlert"`
 		FailedLocationsCamel  int64           `json:"FailedLocations"`
@@ -301,6 +303,18 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	}
 	if m.NetPublic == nil {
 		m.NetPublic = aux.NetPublicCamel
+	}
+	if m.Extra == nil {
+		m.Extra = map[string]any{}
+	}
+	if aux.KeywordV3 != "" {
+		m.Extra["Keyword"] = aux.KeywordV3
+	}
+	if len(aux.HTTPCodesV3) > 0 {
+		m.Extra["HTTPCodes"] = aux.HTTPCodesV3
+	}
+	if len(m.Extra) == 0 {
+		m.Extra = nil
 	}
 	return nil
 }
