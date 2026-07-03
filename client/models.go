@@ -278,7 +278,7 @@ type UptimeMonitor struct {
 	Type             string   `json:"-"`
 	Name             string   `json:"name"`
 	Target           string   `json:"target"`
-	Port             int64    `json:"port"`
+	Port             *int64   `json:"port"`
 	HTTPMethod       string   `json:"http_method"`
 	MaxRedirects     int64    `json:"max_redirects"`
 	SMTPUser         string   `json:"smtp_user"`
@@ -304,7 +304,7 @@ type UptimeMonitor struct {
 	RAMPublic        *bool    `json:"ram_public"`
 	DiskPublic       *bool    `json:"disk_public"`
 	NetPublic        *bool    `json:"net_public"`
-	ServerID         string   `json:"server_id"`
+	ServerID         *string  `json:"server_id"`
 }
 
 // UnmarshalJSON accepts both v3 snake_case fields and legacy v2 camel-case names.
@@ -317,7 +317,8 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 		IDCamel               string          `json:"MonitorID"`
 		TypeRaw               json.RawMessage `json:"type"`
 		TypeCamel             json.RawMessage `json:"Type"`
-		AgentID               string          `json:"agent_id"`
+		AgentID               *string         `json:"agent_id"`
+		PortCamel             *int64          `json:"Port"`
 		HTTPMethodCamel       string          `json:"Method"`
 		MaxRedirectsCamel     int64           `json:"MaxRedirects"`
 		SMTPUserCamel         string          `json:"SMTPUser"`
@@ -361,8 +362,17 @@ func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
 	if m.Frequency == 0 {
 		m.Frequency = aux.FrequencyV3
 	}
-	if m.ServerID == "" {
+	if m.ServerID == nil {
 		m.ServerID = aux.AgentID
+	}
+	if m.Type != "heartbeat" {
+		m.ServerID = nil
+	}
+	if m.Port == nil {
+		m.Port = aux.PortCamel
+	}
+	if m.Type != "smtp" {
+		m.Port = nil
 	}
 	if m.HTTPMethod == "" {
 		m.HTTPMethod = aux.HTTPMethodCamel

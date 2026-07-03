@@ -609,7 +609,7 @@ func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) 
 			"name":"Homepage",
 			"type":"website",
 			"target":"https://example.com",
-			"port":null,
+			"port":0,
 			"http_method":"GET",
 			"max_redirects":5,
 			"agent_id":"agent-1",
@@ -648,11 +648,14 @@ func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) 
 	if got, want := monitor.HTTPMethod, "GET"; got != want {
 		t.Fatalf("http method = %q, want %q", got, want)
 	}
+	if monitor.Port != nil {
+		t.Fatalf("port = %#v, want nil for http monitor", monitor.Port)
+	}
+	if monitor.ServerID != nil {
+		t.Fatalf("server ID = %#v, want nil for http monitor", monitor.ServerID)
+	}
 	if got, want := monitor.MaxRedirects, int64(5); got != want {
 		t.Fatalf("max redirects = %d, want %d", got, want)
-	}
-	if got, want := monitor.ServerID, "agent-1"; got != want {
-		t.Fatalf("server ID = %q, want %q", got, want)
 	}
 	if got, want := monitor.AlertAfter, "5m"; got != want {
 		t.Fatalf("alert after = %q, want %q", got, want)

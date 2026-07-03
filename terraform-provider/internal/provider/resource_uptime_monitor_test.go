@@ -15,13 +15,16 @@ func (d *testDiagnostics) AddError(summary string, detail string) {
 	d.errors = append(d.errors, summary+": "+detail)
 }
 
+func pointerToInt64(value int64) *int64 { return &value }
+
+func pointerToString(value string) *string { return &value }
+
 func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	showTarget := false
 	trueValue := true
-	falseValue := false
 	diagnostics := &testDiagnostics{}
 	state := uptimeMonitorModelFromAPI(ctx, uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
 		ID:               "up-1",
@@ -46,13 +49,6 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 		Locations:        []string{"amsterdam", "new_york"},
 		Keyword:          "healthy",
 		HTTPCodes:        []int64{200, 204},
-		Grace:            120,
-		InfoPublic:       &trueValue,
-		CPUPublic:        &falseValue,
-		RAMPublic:        &trueValue,
-		DiskPublic:       &falseValue,
-		NetPublic:        &trueValue,
-		ServerID:         "srv-1",
 	}, diagnostics)
 	if len(diagnostics.errors) > 0 {
 		t.Fatalf("unexpected diagnostics: %#v", diagnostics.errors)
@@ -73,8 +69,11 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	if got, want := state.VerSSLCert.ValueBool(), true; got != want {
 		t.Fatalf("verify ssl certificate = %v, want %v", got, want)
 	}
-	if got, want := state.ServerID.ValueString(), "srv-1"; got != want {
-		t.Fatalf("server ID = %q, want %q", got, want)
+	if !state.Port.IsNull() {
+		t.Fatalf("port = %#v, want null for http monitor", state.Port)
+	}
+	if !state.ServerID.IsNull() {
+		t.Fatalf("server ID = %#v, want null for http monitor", state.ServerID)
 	}
 	if got, want := state.Keyword.ValueString(), "healthy"; got != want {
 		t.Fatalf("keyword = %q, want %q", got, want)
@@ -100,6 +99,35 @@ func TestUptimeMonitorModelFromAPIHydratesImportState(t *testing.T) {
 	}
 	if got, want := locations, []string{"amsterdam", "new_york"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("locations = %#v, want %#v", got, want)
+	}
+}
+
+func TestUptimeMonitorModelFromAPIPreservesSMTPPort(t *testing.T) {
+	t.Parallel()
+
+	state := uptimeMonitorModelFromAPI(context.Background(), uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
+		ID:     "smtp-1",
+		Type:   "smtp",
+		Name:   "SMTP",
+		Target: "smtp.example.com",
+		Port:   pointerToInt64(587),
+	}, &testDiagnostics{})
+	if got, want := state.Port.ValueInt64(), int64(587); got != want {
+		t.Fatalf("port = %d, want %d", got, want)
+	}
+}
+
+func TestUptimeMonitorModelFromAPIPreservesHeartbeatServerID(t *testing.T) {
+	t.Parallel()
+
+	state := uptimeMonitorModelFromAPI(context.Background(), uptimeMonitorModel{}, hetrixtools.UptimeMonitor{
+		ID:       "heartbeat-1",
+		Type:     "heartbeat",
+		Name:     "Heartbeat",
+		ServerID: pointerToString("srv-1"),
+	}, &testDiagnostics{})
+	if got, want := state.ServerID.ValueString(), "srv-1"; got != want {
+		t.Fatalf("server ID = %q, want %q", got, want)
 	}
 }
 

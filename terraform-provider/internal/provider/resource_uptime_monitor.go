@@ -110,7 +110,6 @@ func (r *uptimeMonitorResource) Schema(_ context.Context, _ resource.SchemaReque
 			"net_public":          optionalComputedBool(),
 			"server_id": schema.StringAttribute{
 				Computed:      true,
-				Sensitive:     true,
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 		},
@@ -326,7 +325,11 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	state.Type = types.StringValue(monitor.Type)
 	state.Name = types.StringValue(monitor.Name)
 	state.Target = types.StringValue(monitor.Target)
-	state.Port = types.Int64Value(monitor.Port)
+	if monitor.Port == nil {
+		state.Port = types.Int64Null()
+	} else {
+		state.Port = types.Int64Value(*monitor.Port)
+	}
 	state.HTTPMethod = stringNullIfEmpty(monitor.HTTPMethod)
 	state.MaxRedirects = types.Int64Value(monitor.MaxRedirects)
 	state.SMTPUser = stringNullIfEmpty(monitor.SMTPUser)
@@ -354,7 +357,11 @@ func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, mo
 	state.RAMPublic = boolFromPointer(monitor.RAMPublic)
 	state.DiskPublic = boolFromPointer(monitor.DiskPublic)
 	state.NetPublic = boolFromPointer(monitor.NetPublic)
-	state.ServerID = stringNullIfEmpty(monitor.ServerID)
+	if monitor.ServerID == nil {
+		state.ServerID = types.StringNull()
+	} else {
+		state.ServerID = stringNullIfEmpty(*monitor.ServerID)
+	}
 
 	if monitor.Locations == nil {
 		state.Locations = types.SetNull(types.StringType)
