@@ -1,6 +1,9 @@
 package hetrixtools
 
-import "net/url"
+import (
+	"encoding/json"
+	"net/url"
+)
 
 // ActionResponse is the common response returned by HetrixTools mutation endpoints.
 type ActionResponse struct {
@@ -118,10 +121,105 @@ type UptimeMonitorRequest struct {
 
 // UptimeMonitor describes a HetrixTools uptime monitor.
 type UptimeMonitor struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Target   string `json:"target"`
-	Category string `json:"category"`
+	ID               string          `json:"id"`
+	Type             int64           `json:"type"`
+	Name             string          `json:"name"`
+	Target           string          `json:"target"`
+	Timeout          int64           `json:"timeout"`
+	Frequency        int64           `json:"frequency"`
+	FailsBeforeAlert int64           `json:"fails_before_alert"`
+	FailedLocations  int64           `json:"failed_locations"`
+	ContactListID    string          `json:"contact_list_id"`
+	Category         string          `json:"category"`
+	AlertAfter       string          `json:"alert_after"`
+	RepeatTimes      int64           `json:"repeat_times"`
+	RepeatEvery      string          `json:"repeat_every"`
+	Public           *bool           `json:"public"`
+	ShowTarget       *bool           `json:"show_target"`
+	VerSSLCert       *bool           `json:"verify_ssl_certificate"`
+	VerSSLHost       *bool           `json:"verify_ssl_host"`
+	Locations        map[string]bool `json:"locations"`
+	Grace            int64           `json:"grace"`
+	InfoPublic       *bool           `json:"info_public"`
+	CPUPublic        *bool           `json:"cpu_public"`
+	RAMPublic        *bool           `json:"ram_public"`
+	DiskPublic       *bool           `json:"disk_public"`
+	NetPublic        *bool           `json:"net_public"`
+	ServerID         string          `json:"server_id"`
+	Extra            map[string]any  `json:"-"`
+}
+
+// UnmarshalJSON accepts both v3 snake_case fields and legacy v2 camel-case names.
+func (m *UptimeMonitor) UnmarshalJSON(body []byte) error {
+	type uptimeMonitor UptimeMonitor
+	var aux struct {
+		uptimeMonitor
+		ContactListCamel      string          `json:"ContactList"`
+		FailsBeforeAlertCamel int64           `json:"FailsBeforeAlert"`
+		FailedLocationsCamel  int64           `json:"FailedLocations"`
+		AlertAfterCamel       string          `json:"AlertAfter"`
+		RepeatTimesCamel      int64           `json:"RepeatTimes"`
+		RepeatEveryCamel      string          `json:"RepeatEvery"`
+		ShowTargetCamel       *bool           `json:"ShowTarget"`
+		VerSSLCertCamel       *bool           `json:"VerSSLCert"`
+		VerSSLHostCamel       *bool           `json:"VerSSLHost"`
+		LocationsCamel        map[string]bool `json:"Locations"`
+		InfoPublicCamel       *bool           `json:"INFOPub"`
+		CPUPublicCamel        *bool           `json:"CPUPub"`
+		RAMPublicCamel        *bool           `json:"RAMPub"`
+		DiskPublicCamel       *bool           `json:"DISKPub"`
+		NetPublicCamel        *bool           `json:"NETPub"`
+	}
+	if err := json.Unmarshal(body, &aux); err != nil {
+		return err
+	}
+	*m = UptimeMonitor(aux.uptimeMonitor)
+	if m.ContactListID == "" {
+		m.ContactListID = aux.ContactListCamel
+	}
+	if m.FailsBeforeAlert == 0 {
+		m.FailsBeforeAlert = aux.FailsBeforeAlertCamel
+	}
+	if m.FailedLocations == 0 {
+		m.FailedLocations = aux.FailedLocationsCamel
+	}
+	if m.AlertAfter == "" {
+		m.AlertAfter = aux.AlertAfterCamel
+	}
+	if m.RepeatTimes == 0 {
+		m.RepeatTimes = aux.RepeatTimesCamel
+	}
+	if m.RepeatEvery == "" {
+		m.RepeatEvery = aux.RepeatEveryCamel
+	}
+	if m.ShowTarget == nil {
+		m.ShowTarget = aux.ShowTargetCamel
+	}
+	if m.VerSSLCert == nil {
+		m.VerSSLCert = aux.VerSSLCertCamel
+	}
+	if m.VerSSLHost == nil {
+		m.VerSSLHost = aux.VerSSLHostCamel
+	}
+	if m.Locations == nil {
+		m.Locations = aux.LocationsCamel
+	}
+	if m.InfoPublic == nil {
+		m.InfoPublic = aux.InfoPublicCamel
+	}
+	if m.CPUPublic == nil {
+		m.CPUPublic = aux.CPUPublicCamel
+	}
+	if m.RAMPublic == nil {
+		m.RAMPublic = aux.RAMPublicCamel
+	}
+	if m.DiskPublic == nil {
+		m.DiskPublic = aux.DiskPublicCamel
+	}
+	if m.NetPublic == nil {
+		m.NetPublic = aux.NetPublicCamel
+	}
+	return nil
 }
 
 // UptimeMonitorsResponse is returned by ListUptimeMonitors.

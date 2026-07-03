@@ -475,6 +475,61 @@ func TestClientAllowsVersionedBaseURLOverrides(t *testing.T) {
 	}
 }
 
+func TestUptimeMonitorUnmarshalAcceptsLegacyCamelCaseFields(t *testing.T) {
+	t.Parallel()
+
+	var monitor UptimeMonitor
+	body := []byte(`{
+		"id":"up-1",
+		"Type":1,
+		"Name":"Homepage",
+		"Target":"https://example.com",
+		"Timeout":10,
+		"Frequency":60,
+		"FailsBeforeAlert":3,
+		"FailedLocations":2,
+		"ContactList":"contacts-1",
+		"Category":"prod",
+		"AlertAfter":"1m",
+		"RepeatTimes":5,
+		"RepeatEvery":"1h",
+		"Public":true,
+		"ShowTarget":false,
+		"VerSSLCert":true,
+		"VerSSLHost":true,
+		"Locations":{"ams":true,"nyc":false},
+		"Grace":120,
+		"INFOPub":true,
+		"CPUPub":false,
+		"RAMPub":true,
+		"DISKPub":false,
+		"NETPub":true,
+		"server_id":"srv-1"
+	}`)
+	if err := json.Unmarshal(body, &monitor); err != nil {
+		t.Fatalf("unmarshal uptime monitor: %s", err)
+	}
+
+	if got, want := monitor.ContactListID, "contacts-1"; got != want {
+		t.Fatalf("contact list = %q, want %q", got, want)
+	}
+	if got, want := monitor.FailsBeforeAlert, int64(3); got != want {
+		t.Fatalf("fails before alert = %d, want %d", got, want)
+	}
+	if monitor.ShowTarget == nil || *monitor.ShowTarget {
+		t.Fatalf("show target = %#v, want false", monitor.ShowTarget)
+	}
+	if monitor.VerSSLCert == nil || !*monitor.VerSSLCert {
+		t.Fatalf("verify SSL certificate = %#v, want true", monitor.VerSSLCert)
+	}
+	if got, want := monitor.Locations["ams"], true; got != want {
+		t.Fatalf("ams location = %v, want %v", got, want)
+	}
+	if monitor.InfoPublic == nil || !*monitor.InfoPublic {
+		t.Fatalf("info public = %#v, want true", monitor.InfoPublic)
+	}
+}
+
 func writePage(w http.ResponseWriter, name string, page string, first string, second string) {
 	w.Header().Set("Content-Type", "application/json")
 	if page == "" || page == "1" {

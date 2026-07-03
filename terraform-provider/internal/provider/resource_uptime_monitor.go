@@ -138,9 +138,10 @@ func (r *uptimeMonitorResource) Read(ctx context.Context, req resource.ReadReque
 		resp.State.RemoveResource(ctx)
 		return
 	}
-	state.Name = types.StringValue(found.Name)
-	state.Target = types.StringValue(found.Target)
-	state.Category = types.StringValue(found.Category)
+	state = uptimeMonitorModelFromAPI(ctx, state, *found, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -182,6 +183,52 @@ func (r *uptimeMonitorResource) ImportState(ctx context.Context, req resource.Im
 
 func (r *uptimeMonitorResource) find(ctx context.Context, id string) (*hetrixtools.UptimeMonitor, error) {
 	return r.client.GetUptimeMonitor(ctx, id)
+}
+
+func uptimeMonitorModelFromAPI(ctx context.Context, state uptimeMonitorModel, monitor hetrixtools.UptimeMonitor, diagnostics interface{ AddError(string, string) }) uptimeMonitorModel {
+	state.ID = types.StringValue(monitor.ID)
+	state.Type = types.Int64Value(monitor.Type)
+	state.Name = types.StringValue(monitor.Name)
+	state.Target = types.StringValue(monitor.Target)
+	state.Timeout = types.Int64Value(monitor.Timeout)
+	state.Frequency = types.Int64Value(monitor.Frequency)
+	state.FailsBeforeAlert = types.Int64Value(monitor.FailsBeforeAlert)
+	state.FailedLocations = types.Int64Value(monitor.FailedLocations)
+	state.ContactList = types.StringValue(monitor.ContactListID)
+	state.Category = types.StringValue(monitor.Category)
+	state.AlertAfter = types.StringValue(monitor.AlertAfter)
+	state.RepeatTimes = types.Int64Value(monitor.RepeatTimes)
+	state.RepeatEvery = types.StringValue(monitor.RepeatEvery)
+	state.Public = boolFromPointer(monitor.Public)
+	state.ShowTarget = boolFromPointer(monitor.ShowTarget)
+	state.VerSSLCert = boolFromPointer(monitor.VerSSLCert)
+	state.VerSSLHost = boolFromPointer(monitor.VerSSLHost)
+	state.Grace = types.Int64Value(monitor.Grace)
+	state.InfoPublic = boolFromPointer(monitor.InfoPublic)
+	state.CPUPublic = boolFromPointer(monitor.CPUPublic)
+	state.RAMPublic = boolFromPointer(monitor.RAMPublic)
+	state.DiskPublic = boolFromPointer(monitor.DiskPublic)
+	state.NetPublic = boolFromPointer(monitor.NetPublic)
+	state.ServerID = types.StringValue(monitor.ServerID)
+
+	if monitor.Locations == nil {
+		state.Locations = types.MapNull(types.BoolType)
+	} else {
+		locations, diags := types.MapValueFrom(ctx, types.BoolType, monitor.Locations)
+		if diags.HasError() {
+			diagnostics.AddError("Invalid uptime monitor locations", fmt.Sprintf("Could not encode locations: %v", diags))
+			return state
+		}
+		state.Locations = locations
+	}
+	return state
+}
+
+func boolFromPointer(value *bool) types.Bool {
+	if value == nil {
+		return types.BoolNull()
+	}
+	return types.BoolValue(*value)
 }
 
 func uptimeMonitorRequestFromModel(ctx context.Context, model uptimeMonitorModel, diagnostics interface{ AddError(string, string) }) hetrixtools.UptimeMonitorRequest {
