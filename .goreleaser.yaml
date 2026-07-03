@@ -30,6 +30,22 @@ archives:
 checksum:
   name_template: "terraform-provider-go-hetrixtools_{{ .Version }}_SHA256SUMS"
 
+signs:
+  - artifacts: checksum
+    args:
+      - --batch
+      - --yes
+      - --pinentry-mode
+      - loopback
+      - --passphrase
+      - "{{ .Env.GPG_PASSPHRASE }}"
+      - --local-user
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --detach-sign
+      - --output
+      - ${signature}
+      - ${artifact}
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
