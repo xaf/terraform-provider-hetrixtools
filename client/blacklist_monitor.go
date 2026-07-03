@@ -59,6 +59,9 @@ func (c *Client) DeleteBlacklistMonitor(ctx context.Context, target string) erro
 }
 
 // ListBlacklistMonitors returns blacklist monitors matching query filters.
+// Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/api/v3/#/paths/~1blacklist-monitors/get
 func (c *Client) ListBlacklistMonitors(ctx context.Context, query map[string]string) (*BlacklistMonitorsResponse, error) {
 	var response BlacklistMonitorsResponse
 	if err := c.getJSON(ctx, "/blacklist-monitors", query, &response); err != nil {
@@ -105,7 +108,10 @@ func (c *Client) cachedBlacklistMonitors(ctx context.Context) ([]BlacklistMonito
 
 // GetBlacklistMonitorReport returns the report for a blacklist monitor
 // identifier as a decoded JSON value, typically a map[string]any. Query keys are
-// passed through to the HetrixTools v3 report endpoint.
+// passed through to the HetrixTools v3 report endpoint. Source-of-truth API
+// docs:
+//
+//   - https://docs.hetrixtools.com/api/v3/#/paths/~1blacklist-monitors~1{identifier}~1report/get
 func (c *Client) GetBlacklistMonitorReport(ctx context.Context, identifier string, query map[string]string) (any, error) {
 	body, err := c.getEndpoint(ctx, "/blacklist-monitors/"+identifier+"/report", query)
 	if err != nil {
@@ -114,12 +120,18 @@ func (c *Client) GetBlacklistMonitorReport(ctx context.Context, identifier strin
 	return decodeUntypedJSON(body)
 }
 
-// CheckBlacklistIPv4 runs a one-off IPv4 blacklist check.
+// CheckBlacklistIPv4 runs a one-off IPv4 blacklist check using the documented
+// v2 blacklist check endpoint. Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/blacklist-check-api/
 func (c *Client) CheckBlacklistIPv4(ctx context.Context, ipAddress string) (*BlacklistCheckResult, error) {
 	return c.checkBlacklist(ctx, "ipv4", ipAddress)
 }
 
-// CheckBlacklistDomain runs a one-off domain blacklist check.
+// CheckBlacklistDomain runs a one-off domain blacklist check using the
+// documented v2 blacklist check endpoint. Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/blacklist-check-api/
 func (c *Client) CheckBlacklistDomain(ctx context.Context, domain string) (*BlacklistCheckResult, error) {
 	return c.checkBlacklist(ctx, "domain", domain)
 }

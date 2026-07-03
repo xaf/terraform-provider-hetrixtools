@@ -6,6 +6,9 @@ import (
 )
 
 // ListStatusPages returns status pages matching query filters.
+// Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/api/v3/#/paths/~1status-pages/get
 func (c *Client) ListStatusPages(ctx context.Context, query map[string]string) (*StatusPagesResponse, error) {
 	var response StatusPagesResponse
 	if err := c.getJSON(ctx, "/status-pages", query, &response); err != nil {
@@ -33,11 +36,17 @@ func (c *Client) GetStatusPage(ctx context.Context, id string) (*StatusPage, err
 }
 
 // AddStatusPageMonitors adds uptime monitors to a status page.
+// Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/api/v3/#/paths/~1status-pages~1{status_page_id}~1monitors/post
 func (c *Client) AddStatusPageMonitors(ctx context.Context, statusPageID string, monitorIDs []string) error {
 	return c.postJSON(ctx, "/status-pages/"+statusPageID+"/monitors", monitorIDs, nil)
 }
 
 // RemoveStatusPageMonitors removes uptime monitors from a status page.
+// Source-of-truth API docs:
+//
+//   - https://docs.hetrixtools.com/api/v3/#/paths/~1status-pages~1{status_page_id}~1monitors/delete
 func (c *Client) RemoveStatusPageMonitors(ctx context.Context, statusPageID string, monitorIDs []string) error {
 	return c.deleteJSON(ctx, "/status-pages/"+statusPageID+"/monitors", monitorIDs)
 }
