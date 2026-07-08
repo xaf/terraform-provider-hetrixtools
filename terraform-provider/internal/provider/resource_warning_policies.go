@@ -104,12 +104,12 @@ func (r *warningPoliciesResource) upsert(ctx context.Context, planGetter interfa
 	if diagnostics.HasError() {
 		return
 	}
-	var payload any
+	var payload hetrixtools.ServerAgentWarningPolicies
 	if err := json.Unmarshal([]byte(plan.Policies.ValueString()), &payload); err != nil {
 		diagnostics.AddError("Invalid policies_json", fmt.Sprintf("policies_json must be a JSON object: %s", err))
 		return
 	}
-	if err := r.client.UpdateServerAgentWarningPolicies(ctx, plan.MonitorID.ValueString(), payload); err != nil {
+	if err := r.client.UpdateServerAgentWarningPolicies(ctx, plan.MonitorID.ValueString(), hetrixtools.ServerAgentWarningPoliciesRequest{ServerAgentWarningPolicies: payload}); err != nil {
 		diagnostics.AddError("Update warning policies failed", err.Error())
 		return
 	}

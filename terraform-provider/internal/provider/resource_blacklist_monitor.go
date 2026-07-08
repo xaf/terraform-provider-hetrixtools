@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -152,12 +151,6 @@ func setBlacklistMonitorState(model *blacklistMonitorModel, monitor hetrixtools.
 	model.Target = types.StringValue(monitor.Target)
 	model.Label = stringNullIfEmpty(firstNonEmpty(monitor.Label, monitor.Name))
 	model.Contact = stringNullIfEmpty(monitor.Contact)
-}
-
-func decodeActionResponse(body []byte) (hetrixtools.ActionResponse, error) {
-	var result hetrixtools.ActionResponse
-	err := json.Unmarshal(body, &result)
-	return result, err
 }
 
 func firstNonEmpty(values ...string) string {

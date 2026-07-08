@@ -35,7 +35,7 @@ func TestClientBlacklistMonitorActionsUseTokenPathAndFormBody(t *testing.T) {
 			if got, want := r.Form.Get("label"), "Example"; got != want {
 				t.Fatalf("label = %q, want %q", got, want)
 			}
-			if got, want := r.Form.Get("contact"), "contacts-1"; got != want {
+			if got, want := r.Form.Get("contact"), "31adab6c21406254efda58b0020b7e8e"; got != want {
 				t.Fatalf("contact = %q, want %q", got, want)
 			}
 			_, _ = w.Write([]byte(`{"status":"SUCCESS","action":"ok"}`))
@@ -48,7 +48,7 @@ func TestClientBlacklistMonitorActionsUseTokenPathAndFormBody(t *testing.T) {
 	defer server.Close()
 
 	c := NewClientWithBaseURL(server.URL+"/v3", "test-token")
-	request := BlacklistMonitorRequest{Target: "example.com", Label: "Example", Contact: "contacts-1"}
+	request := BlacklistMonitorRequest{Target: "example.com", Label: "Example", Contact: "31adab6c21406254efda58b0020b7e8e"}
 	if _, err := c.CreateBlacklistMonitor(context.Background(), request); err != nil {
 		t.Fatalf("CreateBlacklistMonitor returned error: %s", err)
 	}
@@ -65,6 +65,27 @@ func TestClientBlacklistMonitorActionsUseTokenPathAndFormBody(t *testing.T) {
 		"POST /v2/test-token/blacklist/delete/",
 	}
 	assertStringSlicesEqual(t, calls, want)
+}
+
+func TestClientBlacklistMonitorActionsValidateBeforeRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected HTTP request for invalid blacklist monitor")
+	}))
+	defer server.Close()
+
+	c := NewClientWithBaseURL(server.URL+"/v3", "test-token")
+	request := BlacklistMonitorRequest{Target: "bad target", Label: "Bad/Label", Contact: "not-a-contact-id"}
+	if _, err := c.CreateBlacklistMonitor(context.Background(), request); err == nil {
+		t.Fatal("expected CreateBlacklistMonitor validation error")
+	}
+	if _, err := c.UpdateBlacklistMonitor(context.Background(), request); err == nil {
+		t.Fatal("expected UpdateBlacklistMonitor validation error")
+	}
+	if _, err := c.UpsertBlacklistMonitor(context.Background(), request); err == nil {
+		t.Fatal("expected UpsertBlacklistMonitor validation error")
+	}
 }
 
 func TestClientUptimeMonitorActionsUseTokenPathAndJSONBody(t *testing.T) {
@@ -182,6 +203,8 @@ func TestClientUpsertMethodsChooseCreateOrUpdate(t *testing.T) {
 
 func TestClientReadMethodsUseBearerAuthAndPaginate(t *testing.T) {
 	t.Parallel()
+	firstMonitorID := "31adab6c21406254efda58b0020b7e8e"
+	secondMonitorID := "87f2baf36ba1a8e93221c04e3f948338"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.Header.Get("Authorization"), "Bearer test-token"; got != want {
@@ -192,11 +215,11 @@ func TestClientReadMethodsUseBearerAuthAndPaginate(t *testing.T) {
 		case "/v3/blacklist-monitors":
 			writePage(w, "blacklist_monitors", r.URL.Query().Get("page"), `{"id":"bm-1","target":"first.example"}`, `{"id":"bm-2","target":"target.example","label":"Target"}`)
 		case "/v3/uptime-monitors":
-			writePage(w, "uptime_monitors", r.URL.Query().Get("page"), `{"id":"up-1","name":"First"}`, `{"id":"up-2","name":"Second","target":"https://example.com","category":"prod"}`)
+			writePage(w, "uptime_monitors", r.URL.Query().Get("page"), `{"id":"`+firstMonitorID+`","name":"First"}`, `{"id":"`+secondMonitorID+`","name":"Second","target":"https://example.com","category":"prod"}`)
 		case "/v3/schedule-maintenance":
-			writePage(w, "scheduled_maintenances", r.URL.Query().Get("page"), `{"id":"sm-1","monitor_id":"up-1"}`, `{"id":"sm-2","monitor_id":"up-2","start":"2026-07-02 10:00"}`)
+			writePage(w, "scheduled_maintenances", r.URL.Query().Get("page"), `{"id":"sm-1","monitor_id":"`+firstMonitorID+`"}`, `{"id":"sm-2","monitor_id":"`+secondMonitorID+`","start":"2026-07-02 10:00"}`)
 		case "/v3/status-pages":
-			writePage(w, "status_pages", r.URL.Query().Get("page"), `{"id":"sp-1","monitors":["up-1"]}`, `{"id":"sp-2","monitors":["up-2"]}`)
+			writePage(w, "status_pages", r.URL.Query().Get("page"), `{"id":"sp-1","monitors":["`+firstMonitorID+`"]}`, `{"id":"sp-2","monitors":["`+secondMonitorID+`"]}`)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -211,14 +234,14 @@ func TestClientReadMethodsUseBearerAuthAndPaginate(t *testing.T) {
 	if got, want := blacklistMonitor.ID, "bm-2"; got != want {
 		t.Fatalf("blacklist monitor ID = %q, want %q", got, want)
 	}
-	uptimeMonitor, err := c.GetUptimeMonitor(context.Background(), "up-2")
+	uptimeMonitor, err := c.GetUptimeMonitor(context.Background(), secondMonitorID)
 	if err != nil {
 		t.Fatalf("GetUptimeMonitor returned error: %s", err)
 	}
 	if got, want := uptimeMonitor.Category, "prod"; got != want {
 		t.Fatalf("uptime monitor category = %q, want %q", got, want)
 	}
-	maintenance, err := c.GetScheduledMaintenance(context.Background(), "sm-2", "up-2")
+	maintenance, err := c.GetScheduledMaintenance(context.Background(), "sm-2", secondMonitorID)
 	if err != nil {
 		t.Fatalf("GetScheduledMaintenance returned error: %s", err)
 	}
@@ -229,7 +252,7 @@ func TestClientReadMethodsUseBearerAuthAndPaginate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStatusPage returned error: %s", err)
 	}
-	if got, want := statusPage.Monitors[0], "up-2"; got != want {
+	if got, want := statusPage.Monitors[0], secondMonitorID; got != want {
 		t.Fatalf("status page monitor = %q, want %q", got, want)
 	}
 }
@@ -338,7 +361,7 @@ func TestClientWriteMethodsUseBearerAuthAndJSONBody(t *testing.T) {
 	if _, err := c.GetServerAgentWarningPolicies(context.Background(), "up-1"); err != nil {
 		t.Fatalf("GetServerAgentWarningPolicies returned error: %s", err)
 	}
-	if err := c.UpdateServerAgentWarningPolicies(context.Background(), "up-1", map[string]any{"cpu": map[string]any{"warning": 90}}); err != nil {
+	if err := c.UpdateServerAgentWarningPolicies(context.Background(), "up-1", ServerAgentWarningPoliciesRequest{ServerAgentWarningPolicies: ServerAgentWarningPolicies{CPUUsageWarn: ServerAgentUsageWarningPolicy{Enabled: true, Threshold: 90}}}); err != nil {
 		t.Fatalf("UpdateServerAgentWarningPolicies returned error: %s", err)
 	}
 	if _, err := c.getEndpoint(context.Background(), "/custom", map[string]string{"x": "1"}); err != nil {
@@ -360,7 +383,7 @@ func TestClientWriteMethodsUseBearerAuthAndJSONBody(t *testing.T) {
 	assertStringSlicesEqual(t, calls, want)
 }
 
-func TestClientBlacklistCheckParsesResultAndRawJSON(t *testing.T) {
+func TestClientBlacklistCheckParsesResult(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -381,9 +404,6 @@ func TestClientBlacklistCheckParsesResultAndRawJSON(t *testing.T) {
 	}
 	if got, want := result.BlacklistedOn[0].RBL, "rbl.example"; got != want {
 		t.Fatalf("rbl = %q, want %q", got, want)
-	}
-	if !strings.Contains(string(result.RawJSON), "blacklisted_count") {
-		t.Fatalf("raw JSON missing original body: %s", string(result.RawJSON))
 	}
 }
 
@@ -599,10 +619,10 @@ func TestUptimeMonitorUnmarshalAcceptsLegacyCamelCaseFields(t *testing.T) {
 	}
 }
 
-func TestUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
+func TestListUptimeMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
 	t.Parallel()
 
-	var response UptimeMonitorsResponse
+	var response ListUptimeMonitorsResponse
 	body := []byte(`{
 		"monitors":[{
 			"id":"up-1",
@@ -760,7 +780,7 @@ func TestUptimeMonitorRequestMarshalRejectsUnknownType(t *testing.T) {
 	t.Parallel()
 
 	_, err := json.Marshal(UptimeMonitorRequest{Type: "dns", Name: "DNS"})
-	if err == nil || !strings.Contains(err.Error(), `unknown uptime monitor type "dns"`) {
+	if err == nil || !strings.Contains(err.Error(), "oneof") {
 		t.Fatalf("error = %v, want unknown type error", err)
 	}
 }
@@ -769,7 +789,7 @@ func TestUptimeMonitorRequestMarshalRejectsUnknownLocation(t *testing.T) {
 	t.Parallel()
 
 	_, err := json.Marshal(UptimeMonitorRequest{Type: "http", Name: "Homepage", Target: "https://example.com", Locations: []string{"antarctica"}})
-	if err == nil || !strings.Contains(err.Error(), `unknown uptime monitor location "antarctica"`) {
+	if err == nil || !strings.Contains(err.Error(), "uptime_location") {
 		t.Fatalf("error = %v, want unknown location error", err)
 	}
 }
@@ -778,35 +798,35 @@ func TestUptimeMonitorRequestValidateRejectsTypeSpecificFields(t *testing.T) {
 	t.Parallel()
 
 	_, err := json.Marshal(UptimeMonitorRequest{Type: "http", Name: "Homepage"})
-	if err == nil || !strings.Contains(err.Error(), "target is required for http uptime monitors") {
+	if err == nil || !strings.Contains(err.Error(), "Target") || !strings.Contains(err.Error(), "required") {
 		t.Fatalf("error = %v, want http target error", err)
 	}
 
 	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Port: 587, Keyword: "healthy"})
-	if err == nil || !strings.Contains(err.Error(), "keyword is only supported for http uptime monitors") {
+	if err == nil || !strings.Contains(err.Error(), "Keyword") || !strings.Contains(err.Error(), "excluded_unless") {
 		t.Fatalf("error = %v, want keyword type error", err)
 	}
 
 	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Target: "smtp.example.com"})
-	if err == nil || !strings.Contains(err.Error(), "port is required for smtp uptime monitors") {
+	if err == nil || !strings.Contains(err.Error(), "Port") || !strings.Contains(err.Error(), "required") {
 		t.Fatalf("error = %v, want smtp port error", err)
 	}
 
 	_, err = json.Marshal(UptimeMonitorRequest{Type: "smtp", Name: "SMTP", Target: "smtp.example.com", Port: 587, SMTPUser: "user"})
-	if err == nil || !strings.Contains(err.Error(), "smtp_user and smtp_password must be set together") {
+	if err == nil || !strings.Contains(err.Error(), "required_with") {
 		t.Fatalf("error = %v, want smtp auth pair error", err)
 	}
 
 	_, err = json.Marshal(UptimeMonitorRequest{Type: "heartbeat", Name: "Heartbeat", Target: "https://example.com"})
-	if err == nil || !strings.Contains(err.Error(), "target is not supported for heartbeat uptime monitors") {
+	if err == nil || !strings.Contains(err.Error(), "Target") || !strings.Contains(err.Error(), "excluded_if") {
 		t.Fatalf("error = %v, want heartbeat target error", err)
 	}
 }
 
-func TestBlacklistMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
+func TestListBlacklistMonitorsResponseUnmarshalAcceptsV3MonitorsEnvelope(t *testing.T) {
 	t.Parallel()
 
-	var response BlacklistMonitorsResponse
+	var response ListBlacklistMonitorsResponse
 	body := []byte(`{
 		"monitors":[{
 			"id":"blacklist-1",

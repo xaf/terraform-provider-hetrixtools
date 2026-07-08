@@ -38,13 +38,13 @@ func exampleClient(responses map[string]string) (*hetrixtools.Client, func()) {
 
 func ExampleNewClientWithBaseURL() {
 	client, closeServer := exampleClient(map[string]string{
-		"GET /v3/account/limits": `{"api_calls_left":42}`,
+		"GET /v3/account/limits": `{"uptime":{"monitors":{"usage":1,"limit":2}}}`,
 	})
 	defer closeServer()
 
 	limits, _ := client.GetAccountLimits(context.Background())
-	fmt.Println(limits.(map[string]any)["api_calls_left"])
-	// Output: 42
+	fmt.Println(limits.Uptime.Monitors.Limit)
+	// Output: 2
 }
 
 func ExampleWithHTTPClient() {
@@ -52,13 +52,13 @@ func ExampleWithHTTPClient() {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"api_calls_left":7}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"uptime":{"monitors":{"usage":3,"limit":7}}}`)),
 		}, nil
 	})}
 	client := hetrixtools.NewClient("token", hetrixtools.WithHTTPClient(httpClient), hetrixtools.WithMinimumRequestInterval(0))
 
 	limits, _ := client.GetAccountLimits(context.Background())
-	fmt.Println(limits.(map[string]any)["api_calls_left"])
+	fmt.Println(limits.Uptime.Monitors.Limit)
 	// Output: 7
 }
 
@@ -89,7 +89,7 @@ func ExampleWithV3BaseURL() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"api_calls_left":5}`))
+		_, _ = w.Write([]byte(`{"uptime":{"monitors":{"usage":2,"limit":5}}}`))
 	}))
 	defer server.Close()
 
@@ -98,7 +98,7 @@ func ExampleWithV3BaseURL() {
 		hetrixtools.WithMinimumRequestInterval(0),
 	)
 	limits, _ := client.GetAccountLimits(context.Background())
-	fmt.Println(limits.(map[string]any)["api_calls_left"])
+	fmt.Println(limits.Uptime.Monitors.Limit)
 	// Output: 5
 }
 
@@ -130,7 +130,7 @@ func ExampleClient_ListUptimeMonitors() {
 	})
 	defer closeServer()
 
-	monitors, _ := client.ListUptimeMonitors(context.Background(), map[string]string{"page": "1"})
+	monitors, _ := client.ListUptimeMonitors(context.Background(), hetrixtools.ListUptimeMonitorsRequest{PaginationRequest: hetrixtools.PaginationRequest{Page: 1}})
 	fmt.Println(monitors.UptimeMonitors[0].Type)
 	// Output: http
 }

@@ -1,5 +1,9 @@
 // Package hetrixtools provides a semantic Go client for HetrixTools APIs.
 //
+// This project is not affiliated with, endorsed by, or supported by
+// HetrixTools. It is provided without any guarantee that the HetrixTools API or
+// this client will behave as expected for your account.
+//
 // The package exposes methods named after HetrixTools actions and resources,
 // while API version selection, bearer authentication, token-in-path behavior,
 // response-shape normalization, and rate-limit handling remain internal to the

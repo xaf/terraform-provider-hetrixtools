@@ -207,14 +207,20 @@ func (c *Client) doV2Form(ctx context.Context, path string, values url.Values) (
 }
 
 func decodeActionResponse(body []byte) (*ActionResponse, error) {
-	var result ActionResponse
-	if err := json.Unmarshal(body, &result); err != nil {
+	var envelope struct {
+		Status       string `json:"status"`
+		ErrorMessage string `json:"error_message"`
+		MonitorID    string `json:"monitor_id"`
+		ServerID     string `json:"server_id"`
+		Action       string `json:"action"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		return nil, err
 	}
-	if result.Status == "ERROR" || result.ErrorMessage != "" {
-		return &result, Error{Response: &result}
+	if envelope.Status == "ERROR" || envelope.ErrorMessage != "" {
+		return nil, Error{Response: &APIErrorResponse{Status: envelope.Status, ErrorMessage: envelope.ErrorMessage}}
 	}
-	return &result, nil
+	return &ActionResponse{Status: envelope.Status, MonitorID: envelope.MonitorID, ServerID: envelope.ServerID, Action: envelope.Action}, nil
 }
 
 func (c *Client) do(ctx context.Context, baseURL string, method string, path string, query map[string]string, body any, bearerAuth bool, limiters []requestLimiter) ([]byte, error) {
@@ -507,7 +513,7 @@ func versionedBaseURLs(baseURL string) (string, string) {
 type Error struct {
 	StatusCode int
 	Body       string
-	Response   *ActionResponse
+	Response   *APIErrorResponse
 }
 
 // Error returns a human-readable HetrixTools API error string.
